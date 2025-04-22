@@ -1,0 +1,32 @@
+{
+  "name": "gicell-senpai-bot",
+  "version": "1.0.0",
+  "description": "Bot WhatsApp berbasis game Gicell Senpai",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest"
+  },
+  "keywords": [
+    "whatsapp-bot",
+    "gicell-senpai",
+    "game-bot",
+    "mongodb",
+    "baileys"
+  ],
+  "author": "Gicell Senpai Developer",
+  "license": "MIT",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.5.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "mongoose": "^7.5.0",
+    "qrcode-terminal": "^0.12.0",
+    "winston": "^3.10.0"
+  },
+  "devDependencies": {
+    "jest": "^29.6.4",
+    "nodemon": "^3.0.1"
+  }
+} 

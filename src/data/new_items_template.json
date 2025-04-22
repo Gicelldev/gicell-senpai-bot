@@ -1,0 +1,446 @@
+[
+  {
+    "itemId": "journeyman_sword",
+    "name": "Journeyman Sword",
+    "description": "A well-crafted sword for experienced warriors",
+    "type": "weapon",
+    "subType": "sword",
+    "tier": 3,
+    "stats": {
+      "damage": 15,
+      "attackSpeed": 1.3,
+      "critChance": 0.05
+    },
+    "requiredLevel": 10,
+    "value": 50,
+    "craftingRequirements": [
+      {
+        "itemId": "simple_logs",
+        "quantity": 5
+      },
+      {
+        "itemId": "simple_ore",
+        "quantity": 10
+      },
+      {
+        "itemId": "journeyman_ore",
+        "quantity": 3
+      }
+    ],
+    "dropRate": 0.3
+  },
+  {
+    "itemId": "journeyman_axe",
+    "name": "Journeyman Axe",
+    "description": "A powerful axe with improved durability",
+    "type": "weapon",
+    "subType": "axe",
+    "tier": 3,
+    "stats": {
+      "damage": 18,
+      "attackSpeed": 0.9,
+      "armorPenetration": 5
+    },
+    "requiredLevel": 12,
+    "value": 60,
+    "craftingRequirements": [
+      {
+        "itemId": "simple_logs",
+        "quantity": 6
+      },
+      {
+        "itemId": "simple_ore",
+        "quantity": 12
+      },
+      {
+        "itemId": "journeyman_ore",
+        "quantity": 4
+      }
+    ],
+    "dropRate": 0.25
+  },
+  {
+    "itemId": "journeyman_bow",
+    "name": "Journeyman Bow",
+    "description": "A sturdy bow with improved range and accuracy",
+    "type": "weapon",
+    "subType": "bow",
+    "tier": 3,
+    "stats": {
+      "damage": 14,
+      "attackSpeed": 1.6,
+      "range": 15,
+      "accuracy": 0.85
+    },
+    "requiredLevel": 11,
+    "value": 55,
+    "craftingRequirements": [
+      {
+        "itemId": "simple_logs",
+        "quantity": 8
+      },
+      {
+        "itemId": "simple_fiber",
+        "quantity": 15
+      },
+      {
+        "itemId": "journeyman_hide",
+        "quantity": 3
+      }
+    ],
+    "dropRate": 0.28
+  },
+  {
+    "itemId": "journeyman_staff",
+    "name": "Journeyman Staff",
+    "description": "A magic staff infused with arcane energy",
+    "type": "weapon",
+    "subType": "staff",
+    "tier": 3,
+    "stats": {
+      "damage": 12,
+      "attackSpeed": 1.1,
+      "magicPower": 10,
+      "manaBonus": 25
+    },
+    "requiredLevel": 10,
+    "value": 58,
+    "craftingRequirements": [
+      {
+        "itemId": "simple_logs",
+        "quantity": 7
+      },
+      {
+        "itemId": "simple_ore",
+        "quantity": 5
+      },
+      {
+        "itemId": "journeyman_crystal",
+        "quantity": 3
+      }
+    ],
+    "dropRate": 0.25
+  },
+  {
+    "itemId": "journeyman_plate_chest",
+    "name": "Journeyman Plate Chest",
+    "description": "A sturdy plate armor for the torso",
+    "type": "armor",
+    "subType": "chest",
+    "tier": 3,
+    "stats": {
+      "defense": 15,
+      "healthBonus": 25,
+      "moveSpeedPenalty": -0.05
+    },
+    "requiredLevel": 12,
+    "value": 65,
+    "craftingRequirements": [
+      {
+        "itemId": "simple_ore",
+        "quantity": 15
+      },
+      {
+        "itemId": "simple_hide",
+        "quantity": 5
+      },
+      {
+        "itemId": "journeyman_ore",
+        "quantity": 5
+      }
+    ],
+    "dropRate": 0.2
+  },
+  {
+    "itemId": "journeyman_leather_chest",
+    "name": "Journeyman Leather Chest",
+    "description": "A flexible leather armor for the torso",
+    "type": "armor",
+    "subType": "chest",
+    "tier": 3,
+    "stats": {
+      "defense": 10,
+      "healthBonus": 15,
+      "dodgeChance": 0.05
+    },
+    "requiredLevel": 11,
+    "value": 55,
+    "craftingRequirements": [
+      {
+        "itemId": "simple_hide",
+        "quantity": 18
+      },
+      {
+        "itemId": "simple_fiber",
+        "quantity": 8
+      },
+      {
+        "itemId": "journeyman_hide",
+        "quantity": 6
+      }
+    ],
+    "dropRate": 0.22
+  },
+  {
+    "itemId": "journeyman_cloth_robe",
+    "name": "Journeyman Cloth Robe",
+    "description": "A high-quality robe enhancing magical abilities",
+    "type": "armor",
+    "subType": "chest",
+    "tier": 3,
+    "stats": {
+      "defense": 7,
+      "healthBonus": 10,
+      "magicPower": 12,
+      "manaBonus": 30
+    },
+    "requiredLevel": 10,
+    "value": 52,
+    "craftingRequirements": [
+      {
+        "itemId": "simple_fiber",
+        "quantity": 20
+      },
+      {
+        "itemId": "journeyman_fiber",
+        "quantity": 8
+      },
+      {
+        "itemId": "journeyman_crystal",
+        "quantity": 2
+      }
+    ],
+    "dropRate": 0.23
+  },
+  {
+    "itemId": "journeyman_plate_helmet",
+    "name": "Journeyman Plate Helmet",
+    "description": "A sturdy protective helmet",
+    "type": "armor",
+    "subType": "head",
+    "tier": 3,
+    "stats": {
+      "defense": 10,
+      "healthBonus": 15
+    },
+    "requiredLevel": 11,
+    "value": 45,
+    "craftingRequirements": [
+      {
+        "itemId": "simple_ore",
+        "quantity": 10
+      },
+      {
+        "itemId": "simple_hide",
+        "quantity": 3
+      },
+      {
+        "itemId": "journeyman_ore",
+        "quantity": 3
+      }
+    ],
+    "dropRate": 0.25
+  },
+  {
+    "itemId": "journeyman_boots",
+    "name": "Journeyman Boots",
+    "description": "Quality boots for adventurers",
+    "type": "armor",
+    "subType": "boots",
+    "tier": 3,
+    "stats": {
+      "defense": 8,
+      "healthBonus": 10,
+      "moveSpeed": 0.08
+    },
+    "requiredLevel": 10,
+    "value": 40,
+    "craftingRequirements": [
+      {
+        "itemId": "simple_hide",
+        "quantity": 12
+      },
+      {
+        "itemId": "simple_fiber",
+        "quantity": 5
+      },
+      {
+        "itemId": "journeyman_hide",
+        "quantity": 4
+      }
+    ],
+    "dropRate": 0.3
+  },
+  {
+    "itemId": "journeyman_logs",
+    "name": "Journeyman Logs",
+    "description": "High-quality logs from strong trees",
+    "type": "resource",
+    "tier": 3,
+    "value": 15,
+    "dropRate": 0.5
+  },
+  {
+    "itemId": "journeyman_stone",
+    "name": "Journeyman Stone",
+    "description": "High-quality stone from rich deposits",
+    "type": "resource",
+    "tier": 3,
+    "value": 15,
+    "dropRate": 0.5
+  },
+  {
+    "itemId": "journeyman_ore",
+    "name": "Journeyman Ore",
+    "description": "High-quality ore from deep deposits",
+    "type": "resource",
+    "tier": 3,
+    "value": 20,
+    "dropRate": 0.4
+  },
+  {
+    "itemId": "journeyman_hide",
+    "name": "Journeyman Hide",
+    "description": "High-quality hide from strong beasts",
+    "type": "resource",
+    "tier": 3,
+    "value": 18,
+    "dropRate": 0.45
+  },
+  {
+    "itemId": "journeyman_fiber",
+    "name": "Journeyman Fiber",
+    "description": "High-quality fiber from rare plants",
+    "type": "resource",
+    "tier": 3,
+    "value": 16,
+    "dropRate": 0.48
+  },
+  {
+    "itemId": "journeyman_crystal",
+    "name": "Journeyman Crystal",
+    "description": "Magical crystal with arcane properties",
+    "type": "resource",
+    "tier": 3,
+    "value": 25,
+    "dropRate": 0.3
+  },
+  {
+    "itemId": "healing_potion",
+    "name": "Healing Potion",
+    "description": "Restores a moderate amount of health",
+    "type": "consumable",
+    "tier": 3,
+    "stats": {
+      "healthRestore": 150
+    },
+    "requiredLevel": 10,
+    "value": 35,
+    "craftingRequirements": [
+      {
+        "itemId": "simple_fiber",
+        "quantity": 5
+      },
+      {
+        "itemId": "journeyman_fiber",
+        "quantity": 3
+      },
+      {
+        "itemId": "journeyman_crystal",
+        "quantity": 1
+      }
+    ],
+    "dropRate": 0.3
+  },
+  {
+    "itemId": "energy_potion",
+    "name": "Energy Potion",
+    "description": "Restores energy and increases attack speed temporarily",
+    "type": "consumable",
+    "tier": 3,
+    "stats": {
+      "energyRestore": 100,
+      "attackSpeedBoost": 0.2,
+      "duration": 300
+    },
+    "requiredLevel": 12,
+    "value": 40,
+    "craftingRequirements": [
+      {
+        "itemId": "simple_fiber",
+        "quantity": 4
+      },
+      {
+        "itemId": "journeyman_fiber",
+        "quantity": 2
+      },
+      {
+        "itemId": "journeyman_crystal",
+        "quantity": 2
+      }
+    ],
+    "dropRate": 0.25
+  },
+  {
+    "itemId": "adept_sword",
+    "name": "Adept Sword",
+    "description": "A finely crafted sword with excellent balance",
+    "type": "weapon",
+    "subType": "sword",
+    "tier": 4,
+    "stats": {
+      "damage": 25,
+      "attackSpeed": 1.4,
+      "critChance": 0.08,
+      "critDamage": 1.5
+    },
+    "requiredLevel": 20,
+    "value": 120,
+    "craftingRequirements": [
+      {
+        "itemId": "journeyman_logs",
+        "quantity": 3
+      },
+      {
+        "itemId": "journeyman_ore",
+        "quantity": 8
+      },
+      {
+        "itemId": "adept_ore",
+        "quantity": 5
+      }
+    ],
+    "dropRate": 0.2
+  },
+  {
+    "itemId": "adept_plate_chest",
+    "name": "Adept Plate Chest",
+    "description": "Superior plate armor providing excellent protection",
+    "type": "armor",
+    "subType": "chest",
+    "tier": 4,
+    "stats": {
+      "defense": 25,
+      "healthBonus": 40,
+      "damageReduction": 0.05,
+      "moveSpeedPenalty": -0.08
+    },
+    "requiredLevel": 22,
+    "value": 140,
+    "craftingRequirements": [
+      {
+        "itemId": "journeyman_ore",
+        "quantity": 12
+      },
+      {
+        "itemId": "journeyman_hide",
+        "quantity": 6
+      },
+      {
+        "itemId": "adept_ore",
+        "quantity": 8
+      }
+    ],
+    "dropRate": 0.15
+  }
+] 

@@ -1,0 +1,228 @@
+[
+  {
+    "itemId": "wooden_sword",
+    "name": "Wooden Sword",
+    "description": "A basic training sword made of wood",
+    "type": "weapon",
+    "subType": "sword",
+    "tier": 1,
+    "stats": {
+      "damage": 5,
+      "attackSpeed": 1.2
+    },
+    "requiredLevel": 1,
+    "value": 10,
+    "craftingRequirements": [
+      {
+        "itemId": "rough_logs",
+        "quantity": 5
+      }
+    ],
+    "dropRate": 0.5
+  },
+  {
+    "itemId": "cloth_robe",
+    "name": "Cloth Robe",
+    "description": "A simple cloth robe for beginners",
+    "type": "armor",
+    "subType": "chest",
+    "tier": 1,
+    "stats": {
+      "defense": 3,
+      "healthBonus": 10
+    },
+    "requiredLevel": 1,
+    "value": 8,
+    "craftingRequirements": [
+      {
+        "itemId": "rough_fiber",
+        "quantity": 8
+      }
+    ],
+    "dropRate": 0.5
+  },
+  {
+    "itemId": "leather_boots",
+    "name": "Leather Boots",
+    "description": "Simple leather boots for beginners",
+    "type": "armor",
+    "subType": "boots",
+    "tier": 1,
+    "stats": {
+      "defense": 2,
+      "speedBonus": 0.05
+    },
+    "requiredLevel": 1,
+    "value": 7,
+    "craftingRequirements": [
+      {
+        "itemId": "rough_hide",
+        "quantity": 5
+      }
+    ],
+    "dropRate": 0.5
+  },
+  {
+    "itemId": "iron_axe",
+    "name": "Iron Axe",
+    "description": "A sturdy iron axe",
+    "type": "weapon",
+    "subType": "axe",
+    "tier": 2,
+    "stats": {
+      "damage": 10,
+      "attackSpeed": 0.9
+    },
+    "requiredLevel": 5,
+    "value": 25,
+    "craftingRequirements": [
+      {
+        "itemId": "simple_logs",
+        "quantity": 3
+      },
+      {
+        "itemId": "simple_ore",
+        "quantity": 5
+      }
+    ],
+    "dropRate": 0.3
+  },
+  {
+    "itemId": "rough_logs",
+    "name": "Rough Logs",
+    "description": "Basic logs gathered from trees",
+    "type": "resource",
+    "tier": 1,
+    "value": 2,
+    "dropRate": 1.0
+  },
+  {
+    "itemId": "rough_stone",
+    "name": "Rough Stone",
+    "description": "Basic stones gathered from rocks",
+    "type": "resource",
+    "tier": 1,
+    "value": 2,
+    "dropRate": 1.0
+  },
+  {
+    "itemId": "rough_ore",
+    "name": "Rough Ore",
+    "description": "Basic ore gathered from mining",
+    "type": "resource",
+    "tier": 1,
+    "value": 3,
+    "dropRate": 0.8
+  },
+  {
+    "itemId": "rough_hide",
+    "name": "Rough Hide",
+    "description": "Basic hide gathered from animals",
+    "type": "resource",
+    "tier": 1,
+    "value": 3,
+    "dropRate": 0.7
+  },
+  {
+    "itemId": "rough_fiber",
+    "name": "Rough Fiber",
+    "description": "Basic fiber gathered from plants",
+    "type": "resource",
+    "tier": 1,
+    "value": 2,
+    "dropRate": 0.9
+  },
+  {
+    "itemId": "simple_logs",
+    "name": "Simple Logs",
+    "description": "Improved logs from mature trees",
+    "type": "resource",
+    "tier": 2,
+    "value": 5,
+    "dropRate": 0.7
+  },
+  {
+    "itemId": "simple_stone",
+    "name": "Simple Stone",
+    "description": "Improved stones from rock formations",
+    "type": "resource",
+    "tier": 2,
+    "value": 5,
+    "dropRate": 0.7
+  },
+  {
+    "itemId": "simple_ore",
+    "name": "Simple Ore",
+    "description": "Improved ore from rich deposits",
+    "type": "resource",
+    "tier": 2,
+    "value": 8,
+    "dropRate": 0.5
+  },
+  {
+    "itemId": "minor_healing_potion",
+    "name": "Minor Healing Potion",
+    "description": "Restores a small amount of health",
+    "type": "consumable",
+    "tier": 1,
+    "stats": {
+      "healthRestore": 50
+    },
+    "requiredLevel": 1,
+    "value": 15,
+    "craftingRequirements": [
+      {
+        "itemId": "rough_fiber",
+        "quantity": 3
+      }
+    ],
+    "dropRate": 0.4
+  },
+  {
+    "itemId": "leather_helmet",
+    "name": "Leather Helmet",
+    "description": "Basic protection for your head",
+    "type": "armor",
+    "subType": "head",
+    "tier": 1,
+    "stats": {
+      "defense": 2,
+      "healthBonus": 5
+    },
+    "requiredLevel": 1,
+    "value": 7,
+    "craftingRequirements": [
+      {
+        "itemId": "rough_hide",
+        "quantity": 4
+      }
+    ],
+    "dropRate": 0.5
+  },
+  {
+    "itemId": "short_bow",
+    "name": "Short Bow",
+    "description": "A simple wooden bow for ranged attacks",
+    "type": "weapon",
+    "subType": "bow",
+    "tier": 1,
+    "stats": {
+      "damage": 4,
+      "attackSpeed": 1.5,
+      "range": 10
+    },
+    "requiredLevel": 1,
+    "value": 12,
+    "craftingRequirements": [
+      {
+        "itemId": "rough_logs",
+        "quantity": 6
+      },
+      {
+        "itemId": "rough_fiber",
+        "quantity": 2
+      }
+    ],
+    "dropRate": 0.4
+  }
+] 

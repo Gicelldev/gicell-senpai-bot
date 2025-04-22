@@ -1,0 +1,38 @@
+# Node modules
+node_modules/
+
+# Environment variables
+.env
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Dependency directories
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Bot session files
+session/
+
+# Build directory
+dist/
+build/
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# IDE / Editor specific
+.idea/
+.vscode/
+*.swp
+*.swo 

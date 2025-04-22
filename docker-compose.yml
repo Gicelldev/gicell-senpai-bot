@@ -1,0 +1,39 @@
+version: '3'
+
+services:
+  app:
+    build: .
+    container_name: gicell-senpai-bot
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./session:/app/session
+      - ./logs:/app/logs
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongo:27017/gicell-senpai
+      - PORT=3000
+      - BOT_NAME=Gicell Senpai
+      - ADMIN_NUMBER=${ADMIN_NUMBER}
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - INITIAL_GMONEY=1000
+      - STARTER_ZONE=safe
+      - DEFAULT_WEAPON=wooden_sword
+      - DEFAULT_ARMOR=cloth_robe
+      - SEED_DATABASE=true
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:5
+    container_name: gicell-senpai-mongo
+    volumes:
+      - mongodb_data:/data/db
+    ports:
+      - "27017:27017"
+    restart: unless-stopped
+
+volumes:
+  mongodb_data: 
