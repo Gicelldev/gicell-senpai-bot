@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Player = require('../models/Player');
 const Guild = require('../models/Guild');
 const logger = require('../utils/logger');
@@ -574,116 +575,135 @@ const promoteMember = async (player, targetName, newRank) => {
  * @returns {Object} - Status dan pesan respons
  */
 const donateToGuild = async (player, type, amount) => {
+  const session = await mongoose.startSession();
+
   try {
-    // Validasi input
-    if (!type || !['gmoney', 'wood', 'stone', 'ore', 'fiber', 'hide'].includes(type.toLowerCase())) {
-      return {
-        status: false,
-        message: 'Jenis sumbangan tidak valid. Gunakan gmoney, wood, stone, ore, fiber, atau hide.'
-      };
-    }
-    
-    type = type.toLowerCase();
-    amount = parseInt(amount);
-    
-    if (!amount || isNaN(amount) || amount <= 0) {
-      return {
-        status: false,
-        message: 'Jumlah sumbangan harus berupa angka positif.'
-      };
-    }
-    
-    // Periksa apakah pemain memiliki guild
-    if (!player.guild) {
-      return {
-        status: false,
-        message: 'Anda belum bergabung dengan guild manapun.'
-      };
-    }
-    
-    // Dapatkan data guild
-    const guild = await Guild.findById(player.guild);
-    
-    if (!guild) {
-      // Jika guild tidak ditemukan, perbaiki data pemain
-      player.guild = null;
-      await player.save();
-      
-      return {
-        status: false,
-        message: 'Guild tidak ditemukan. Data Anda telah diperbaiki.'
-      };
-    }
-    
-    // Cek apakah pemain memiliki sumber daya yang cukup
-    if (type === 'gmoney') {
-      if (player.gmoney < amount) {
-        return {
+    let result;
+
+    await session.withTransaction(async () => {
+      // Validasi input
+      if (!type || !['gmoney', 'wood', 'stone', 'ore', 'fiber', 'hide'].includes(type.toLowerCase())) {
+        result = {
           status: false,
-          message: `Anda tidak memiliki cukup Gmoney. Saldo Anda: ${player.gmoney}`
+          message: 'Jenis sumbangan tidak valid. Gunakan gmoney, wood, stone, ore, fiber, atau hide.'
         };
+        return;
       }
       
-      // Kurangi Gmoney pemain
-      player.gmoney -= amount;
+      type = type.toLowerCase();
+      amount = parseInt(amount);
       
-      // Tambahkan ke treasury guild
-      guild.treasury.gmoney += amount;
-      
-      // Tambahkan kontribusi pemain
-      guild.addContribution(player._id, 'gmoney', amount);
-    } else {
-      // Cek resource pemain
-      const resourceItem = player.inventory.find(item => 
-        item.type === 'resource' && item.name.toLowerCase() === type
-      );
-      
-      if (!resourceItem || resourceItem.quantity < amount) {
-        return {
+      if (!amount || isNaN(amount) || amount <= 0) {
+        result = {
           status: false,
-          message: `Anda tidak memiliki cukup ${type}. Jumlah yang Anda miliki: ${resourceItem ? resourceItem.quantity : 0}`
+          message: 'Jumlah sumbangan harus berupa angka positif.'
         };
+        return;
       }
       
-      // Kurangi resource pemain
-      resourceItem.quantity -= amount;
-      
-      // Hapus item jika quantity 0
-      if (resourceItem.quantity <= 0) {
-        player.inventory = player.inventory.filter(item => 
-          !(item.type === 'resource' && item.name.toLowerCase() === type)
-        );
+      const freshPlayer = await Player.findById(player._id).session(session);
+      if (!freshPlayer) {
+        result = {
+          status: false,
+          message: 'Data pemain tidak ditemukan.'
+        };
+        return;
+      }
+
+      // Periksa apakah pemain memiliki guild
+      if (!freshPlayer.guild) {
+        result = {
+          status: false,
+          message: 'Anda belum bergabung dengan guild manapun.'
+        };
+        return;
       }
       
-      // Tambahkan ke treasury guild
-      guild.treasury.resources[type] += amount;
+      // Dapatkan data guild
+      const guild = await Guild.findById(freshPlayer.guild).session(session);
       
-      // Tambahkan kontribusi pemain
-      guild.addContribution(player._id, 'resources', amount);
-    }
-    
-    // Cek apakah level guild naik
-    const nextLevelReq = guild.getNextLevelRequirement();
-    if (guild.treasury.gmoney >= nextLevelReq && guild.level < 10) {
-      guild.level += 1;
-    }
-    
-    // Simpan perubahan
-    await guild.save();
-    await player.save();
-    
-    return {
-      status: true,
-      message: `Anda telah menyumbang ${amount} ${type} ke guild. Terima kasih atas kontribusi Anda!`
-    };
+      if (!guild) {
+        // Jika guild tidak ditemukan, perbaiki data pemain
+        freshPlayer.guild = null;
+        await freshPlayer.save({ session });
+        
+        result = {
+          status: false,
+          message: 'Guild tidak ditemukan. Data Anda telah diperbaiki.'
+        };
+        return;
+      }
+      
+      // Cek apakah pemain memiliki sumber daya yang cukup
+      if (type === 'gmoney') {
+        if (freshPlayer.gmoney < amount) {
+          result = {
+            status: false,
+            message: `Anda tidak memiliki cukup Gmoney. Saldo Anda: ${freshPlayer.gmoney}`
+          };
+          return;
+        }
+        
+        // Kurangi Gmoney pemain
+        freshPlayer.gmoney -= amount;
+        
+        // Tambahkan kontribusi pemain sekaligus update treasury guild
+        guild.addContribution(freshPlayer._id, 'gmoney', amount);
+      } else {
+        const availableResource = freshPlayer.getTotalResourceQuantity(type);
+        
+        if (availableResource < amount) {
+          result = {
+            status: false,
+            message: `Anda tidak memiliki cukup ${type}. Jumlah yang Anda miliki: ${availableResource}`
+          };
+          return;
+        }
+        
+        const consumed = freshPlayer.consumeResource(type, amount);
+        if (!consumed) {
+          result = {
+            status: false,
+            message: 'Terjadi kesalahan saat mengurangi resource dari inventory Anda.'
+          };
+          return;
+        }
+        
+        // Tambahkan ke treasury guild
+        guild.treasury.resources[type] += amount;
+        
+        // Tambahkan kontribusi pemain
+        guild.addContribution(freshPlayer._id, 'resources', amount);
+      }
+      
+      // Cek apakah level guild naik
+      const nextLevelReq = guild.getNextLevelRequirement();
+      if (guild.treasury.gmoney >= nextLevelReq && guild.level < 10) {
+        guild.level += 1;
+      }
+      
+      // Simpan perubahan
+      await guild.save({ session });
+      await freshPlayer.save({ session });
+      
+      result = {
+        status: true,
+        message: `Anda telah menyumbang ${amount} ${type} ke guild. Terima kasih atas kontribusi Anda!`
+      };
+    });
+
+    return result;
   } catch (error) {
     logger.error(`Error donating to guild: ${error.message}`);
     return {
       status: false,
       message: 'Terjadi kesalahan saat menyumbang ke guild.'
     };
+  } finally {
+    await session.endSession();
   }
 };
+
 
 /**
  * Mendapatkan informasi guild berdasarkan nama

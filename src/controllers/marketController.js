@@ -1,7 +1,11 @@
+const mongoose = require('mongoose');
 const Player = require('../models/Player');
-const Item = require('../models/Item');
 const MarketListing = require('../models/MarketListing');
 const logger = require('../utils/logger');
+
+const MARKET_LISTING_FEE_RATE = 0.02;
+const MARKET_SALE_TAX_RATE = 0.05;
+const MINIMUM_PRICE_PER_UNIT = 1;
 
 /**
  * Melihat semua listing di marketplace
@@ -117,100 +121,137 @@ const viewMarket = async (userId) => {
  * @returns {Object} - Status dan pesan respons
  */
 const sellItem = async (userId, itemId, price, quantity = 1) => {
+  const session = await mongoose.startSession();
+
   try {
-    // Validasi input
-    if (!itemId || !price) {
-      return {
-        status: false,
-        message: 'Format perintah tidak valid. Contoh: !jual rough_logs 100 5'
+    let result;
+
+    await session.withTransaction(async () => {
+      // Validasi input
+      if (!itemId || !price) {
+        result = {
+          status: false,
+          message: 'Format perintah tidak valid. Contoh: !jual rough_logs 100 5'
+        };
+        return;
+      }
+      
+      // Validasi harga
+      const priceNum = parseInt(price);
+      if (isNaN(priceNum) || priceNum <= 0) {
+        result = {
+          status: false,
+          message: 'Harga harus berupa angka positif.'
+        };
+        return;
+      }
+      
+      // Validasi jumlah
+      const quantityNum = parseInt(quantity);
+      if (isNaN(quantityNum) || quantityNum <= 0) {
+        result = {
+          status: false,
+          message: 'Jumlah harus berupa angka positif.'
+        };
+        return;
+      }
+      
+      // Cari pemain dalam database
+      const player = await Player.findOne({ userId }).session(session);
+      
+      if (!player) {
+        result = {
+          status: false,
+          message: 'Anda belum terdaftar sebagai pemain. Gunakan !daftar [nama] untuk mendaftar.'
+        };
+        return;
+      }
+      
+      // Update lastActivity
+      player.lastActivity = Date.now();
+      
+      // Cari item di inventory pemain
+      const inventoryItem = player.inventory.find(i => 
+        i.itemId === itemId || 
+        i.name.toLowerCase() === itemId.toLowerCase()
+      );
+      
+      if (!inventoryItem) {
+        result = {
+          status: false,
+          message: `Item "${itemId}" tidak ditemukan dalam inventory Anda.`
+        };
+        return;
+      }
+      
+      // Validasi jumlah
+      if (inventoryItem.quantity < quantityNum) {
+        result = {
+          status: false,
+          message: `Anda hanya memiliki ${inventoryItem.quantity} ${inventoryItem.name}, tidak cukup untuk menjual ${quantityNum} unit.`
+        };
+        return;
+      }
+      
+      const totalUnits = quantityNum;
+      const minimumAllowedPrice = Math.max(MINIMUM_PRICE_PER_UNIT * totalUnits, Math.ceil((inventoryItem.tier || 1) * totalUnits));
+      if (priceNum < minimumAllowedPrice) {
+        result = {
+          status: false,
+          message: `Harga terlalu rendah. Minimum harga untuk ${inventoryItem.name} x${quantityNum} adalah ${minimumAllowedPrice} Gmoney.`
+        };
+        return;
+      }
+
+      const listingFee = Math.max(1, Math.ceil(priceNum * MARKET_LISTING_FEE_RATE));
+      if (player.gmoney < listingFee) {
+        result = {
+          status: false,
+          message: `Anda membutuhkan ${listingFee} Gmoney untuk biaya listing item ini.`
+        };
+        return;
+      }
+
+      // Buat listing baru
+      const newListing = new MarketListing({
+        seller: player._id,
+        itemId: inventoryItem.itemId,
+        name: inventoryItem.name,
+        type: inventoryItem.type,
+        tier: inventoryItem.tier,
+        quantity: quantityNum,
+        price: priceNum,
+        stats: inventoryItem.stats || {}
+      });
+
+      // Simpan listing
+      await newListing.save({ session });
+      
+      // Kurangi item dari inventory pemain
+      player.removeItem(inventoryItem.itemId, quantityNum);
+      player.gmoney -= listingFee;
+      await player.save({ session });
+      
+      logger.info(`Player ${player.name} listed ${quantityNum} ${inventoryItem.name} for ${priceNum} Gmoney with fee ${listingFee}`);
+      
+      result = {
+        status: true,
+        message: `✅ Berhasil mendaftarkan ${inventoryItem.name} x${quantityNum} ke marketplace dengan harga ${priceNum} Gmoney. Biaya listing: ${listingFee} Gmoney.`
       };
-    }
-    
-    // Validasi harga
-    const priceNum = parseInt(price);
-    if (isNaN(priceNum) || priceNum <= 0) {
-      return {
-        status: false,
-        message: 'Harga harus berupa angka positif.'
-      };
-    }
-    
-    // Validasi jumlah
-    const quantityNum = parseInt(quantity);
-    if (isNaN(quantityNum) || quantityNum <= 0) {
-      return {
-        status: false,
-        message: 'Jumlah harus berupa angka positif.'
-      };
-    }
-    
-    // Cari pemain dalam database
-    const player = await Player.findByUserId(userId);
-    
-    if (!player) {
-      return {
-        status: false,
-        message: 'Anda belum terdaftar sebagai pemain. Gunakan !daftar [nama] untuk mendaftar.'
-      };
-    }
-    
-    // Update lastActivity
-    player.lastActivity = Date.now();
-    
-    // Cari item di inventory pemain
-    const inventoryItem = player.inventory.find(i => 
-      i.itemId === itemId || 
-      i.name.toLowerCase() === itemId.toLowerCase()
-    );
-    
-    if (!inventoryItem) {
-      return {
-        status: false,
-        message: `Item "${itemId}" tidak ditemukan dalam inventory Anda.`
-      };
-    }
-    
-    // Validasi jumlah
-    if (inventoryItem.quantity < quantityNum) {
-      return {
-        status: false,
-        message: `Anda hanya memiliki ${inventoryItem.quantity} ${inventoryItem.name}, tidak cukup untuk menjual ${quantityNum} unit.`
-      };
-    }
-    
-    // Buat listing baru
-    const newListing = new MarketListing({
-      seller: player._id,
-      itemId: inventoryItem.itemId,
-      name: inventoryItem.name,
-      type: inventoryItem.type,
-      tier: inventoryItem.tier,
-      quantity: quantityNum,
-      price: priceNum,
-      stats: inventoryItem.stats || {}
     });
-    
-    // Simpan listing
-    await newListing.save();
-    
-    // Kurangi item dari inventory pemain
-    player.removeItem(inventoryItem.itemId, quantityNum);
-    await player.save();
-    
-    logger.info(`Player ${player.name} listed ${quantityNum} ${inventoryItem.name} for ${priceNum} Gmoney`);
-    
-    return {
-      status: true,
-      message: `✅ Berhasil mendaftarkan ${inventoryItem.name} x${quantityNum} ke marketplace dengan harga ${priceNum} Gmoney.`
-    };
+
+    return result;
   } catch (error) {
     logger.error(`Error selling item: ${error.message}`);
     return {
       status: false,
       message: `Terjadi kesalahan saat menjual item: ${error.message}`
     };
+  } finally {
+    await session.endSession();
   }
 };
+
 
 /**
  * Membeli item dari marketplace
@@ -220,125 +261,136 @@ const sellItem = async (userId, itemId, price, quantity = 1) => {
  * @returns {Object} - Status dan pesan respons
  */
 const buyItem = async (userId, listingId, quantity = null) => {
+  const session = await mongoose.startSession();
+
   try {
-    // Validasi input
-    if (!listingId) {
-      return {
-        status: false,
-        message: 'Silakan tentukan ID listing yang ingin dibeli. Contoh: !beli 5f7b1c3d4e2a1b0e8f9d0c2a'
-      };
-    }
-    
-    // Cari pemain dalam database
-    const player = await Player.findByUserId(userId);
-    
-    if (!player) {
-      return {
-        status: false,
-        message: 'Anda belum terdaftar sebagai pemain. Gunakan !daftar [nama] untuk mendaftar.'
-      };
-    }
-    
-    // Update lastActivity
-    player.lastActivity = Date.now();
-    
-    // Cari listing berdasarkan ID
-    const listing = await MarketListing.findById(listingId).populate('seller', 'name');
-    
-    if (!listing) {
-      return {
-        status: false,
-        message: 'Listing tidak ditemukan. Mungkin sudah terjual atau dihapus.'
-      };
-    }
-    
-    // Cek apakah pemain membeli listing miliknya sendiri
-    if (listing.seller._id.toString() === player._id.toString()) {
-      return {
-        status: false,
-        message: 'Anda tidak bisa membeli listing yang Anda buat sendiri.'
-      };
-    }
-    
-    // Tentukan jumlah yang dibeli
-    const quantityToBuy = quantity ? parseInt(quantity) : listing.quantity;
-    
-    if (isNaN(quantityToBuy) || quantityToBuy <= 0 || quantityToBuy > listing.quantity) {
-      return {
-        status: false,
-        message: `Jumlah tidak valid. Harus antara 1 dan ${listing.quantity}.`
-      };
-    }
-    
-    // Hitung total harga
-    const totalPrice = Math.round((listing.price / listing.quantity) * quantityToBuy);
-    
-    // Cek apakah pemain memiliki cukup Gmoney
-    if (player.gmoney < totalPrice) {
-      return {
-        status: false,
-        message: `Gmoney Anda (${player.gmoney}) tidak cukup untuk membeli item ini (${totalPrice}).`
-      };
-    }
-    
-    // Proses pembelian
-    // Kurangi Gmoney pemain
-    player.gmoney -= totalPrice;
-    
-    // Tambahkan item ke inventory pemain
-    const boughtItem = {
-      itemId: listing.itemId,
-      name: listing.name,
-      type: listing.type,
-      tier: listing.tier,
-      stats: listing.stats,
-      quantity: quantityToBuy
-    };
-    
-    player.addItem(boughtItem);
-    
-    // Simpan perubahan pada pemain
-    await player.save();
-    
-    // Update atau hapus listing
-    if (quantityToBuy === listing.quantity) {
-      // Hapus listing jika seluruh kuantitas dibeli
-      await MarketListing.findByIdAndDelete(listingId);
-      
-      // Tambahkan Gmoney ke penjual
-      const seller = await Player.findById(listing.seller._id);
-      if (seller) {
-        seller.gmoney += totalPrice;
-        await seller.save();
+    let result;
+
+    await session.withTransaction(async () => {
+      // Validasi input
+      if (!listingId) {
+        result = {
+          status: false,
+          message: 'Silakan tentukan ID listing yang ingin dibeli. Contoh: !beli 5f7b1c3d4e2a1b0e8f9d0c2a'
+        };
+        return;
       }
-    } else {
-      // Update listing jika hanya sebagian yang dibeli
-      listing.quantity -= quantityToBuy;
-      listing.price -= totalPrice;
-      await listing.save();
       
-      // Tambahkan Gmoney ke penjual
-      const seller = await Player.findById(listing.seller._id);
-      if (seller) {
-        seller.gmoney += totalPrice;
-        await seller.save();
+      // Cari pemain dalam database
+      const player = await Player.findOne({ userId }).session(session);
+      
+      if (!player) {
+        result = {
+          status: false,
+          message: 'Anda belum terdaftar sebagai pemain. Gunakan !daftar [nama] untuk mendaftar.'
+        };
+        return;
       }
-    }
-    
-    logger.info(`Player ${player.name} bought ${quantityToBuy} ${listing.name} for ${totalPrice} Gmoney from ${listing.seller.name}`);
-    
-    return {
-      status: true,
-      message: `✅ Berhasil membeli ${listing.name} x${quantityToBuy} seharga ${totalPrice} Gmoney dari ${listing.seller.name}.`
-    };
+      
+      // Update lastActivity
+      player.lastActivity = Date.now();
+      
+      // Cari listing berdasarkan ID
+      const listing = await MarketListing.findById(listingId).session(session);
+      
+      if (!listing) {
+        result = {
+          status: false,
+          message: 'Listing tidak ditemukan. Mungkin sudah terjual atau dihapus.'
+        };
+        return;
+      }
+
+      const seller = await Player.findById(listing.seller).session(session);
+      if (!seller) {
+        result = {
+          status: false,
+          message: 'Penjual listing tidak ditemukan. Listing ini tidak dapat diproses.'
+        };
+        return;
+      }
+      
+      // Cek apakah pemain membeli listing miliknya sendiri
+      if (seller._id.toString() === player._id.toString()) {
+        result = {
+          status: false,
+          message: 'Anda tidak bisa membeli listing yang Anda buat sendiri.'
+        };
+        return;
+      }
+      
+      // Tentukan jumlah yang dibeli
+      const quantityToBuy = quantity ? parseInt(quantity) : listing.quantity;
+      
+      if (isNaN(quantityToBuy) || quantityToBuy <= 0 || quantityToBuy > listing.quantity) {
+        result = {
+          status: false,
+          message: `Jumlah tidak valid. Harus antara 1 dan ${listing.quantity}.`
+        };
+        return;
+      }
+      
+      // Hitung total harga
+      const totalPrice = Math.round((listing.price / listing.quantity) * quantityToBuy);
+      
+      // Cek apakah pemain memiliki cukup Gmoney
+      if (player.gmoney < totalPrice) {
+        result = {
+          status: false,
+          message: `Gmoney Anda (${player.gmoney}) tidak cukup untuk membeli item ini (${totalPrice}).`
+        };
+        return;
+      }
+      
+      // Proses pembelian
+      player.gmoney -= totalPrice;
+      
+      const boughtItem = {
+        itemId: listing.itemId,
+        name: listing.name,
+        type: listing.type,
+        tier: listing.tier,
+        stats: listing.stats,
+        quantity: quantityToBuy
+      };
+      
+      player.addItem(boughtItem);
+      await player.save({ session });
+      
+      const saleTax = Math.max(1, Math.floor(totalPrice * MARKET_SALE_TAX_RATE));
+      const sellerReceives = Math.max(0, totalPrice - saleTax);
+
+      if (quantityToBuy === listing.quantity) {
+        await MarketListing.findByIdAndDelete(listingId).session(session);
+      } else {
+        listing.quantity -= quantityToBuy;
+        listing.price -= totalPrice;
+        await listing.save({ session });
+      }
+
+      seller.gmoney += sellerReceives;
+      await seller.save({ session });
+      
+      logger.info(`Player ${player.name} bought ${quantityToBuy} ${listing.name} for ${totalPrice} Gmoney from ${seller.name}; seller received ${sellerReceives}, tax ${saleTax}`);
+      
+      result = {
+        status: true,
+        message: `✅ Berhasil membeli ${listing.name} x${quantityToBuy} seharga ${totalPrice} Gmoney dari ${seller.name}. Pajak pasar: ${saleTax} Gmoney.`
+      };
+    });
+
+    return result;
   } catch (error) {
     logger.error(`Error buying item: ${error.message}`);
     return {
       status: false,
       message: `Terjadi kesalahan saat membeli item: ${error.message}`
     };
+  } finally {
+    await session.endSession();
   }
 };
+
 
 /**
  * Membatalkan listing di marketplace
@@ -347,78 +399,83 @@ const buyItem = async (userId, listingId, quantity = null) => {
  * @returns {Object} - Status dan pesan respons
  */
 const cancelListing = async (userId, listingId) => {
+  const session = await mongoose.startSession();
+
   try {
-    // Validasi input
-    if (!listingId) {
-      return {
-        status: false,
-        message: 'Silakan tentukan ID listing yang ingin dibatalkan. Contoh: !pasar batal 5f7b1c3d4e2a1b0e8f9d0c2a'
+    let result;
+
+    await session.withTransaction(async () => {
+      if (!listingId) {
+        result = {
+          status: false,
+          message: 'Silakan tentukan ID listing yang ingin dibatalkan. Contoh: !pasar batal 5f7b1c3d4e2a1b0e8f9d0c2a'
+        };
+        return;
+      }
+      
+      const player = await Player.findOne({ userId }).session(session);
+      
+      if (!player) {
+        result = {
+          status: false,
+          message: 'Anda belum terdaftar sebagai pemain. Gunakan !daftar [nama] untuk mendaftar.'
+        };
+        return;
+      }
+      
+      player.lastActivity = Date.now();
+      
+      const listing = await MarketListing.findById(listingId).session(session);
+      
+      if (!listing) {
+        result = {
+          status: false,
+          message: 'Listing tidak ditemukan. Mungkin sudah terjual atau dihapus.'
+        };
+        return;
+      }
+      
+      if (listing.seller.toString() !== player._id.toString()) {
+        result = {
+          status: false,
+          message: 'Anda tidak bisa membatalkan listing yang bukan milik Anda.'
+        };
+        return;
+      }
+      
+      const returnedItem = {
+        itemId: listing.itemId,
+        name: listing.name,
+        type: listing.type,
+        tier: listing.tier,
+        stats: listing.stats,
+        quantity: listing.quantity
       };
-    }
-    
-    // Cari pemain dalam database
-    const player = await Player.findByUserId(userId);
-    
-    if (!player) {
-      return {
-        status: false,
-        message: 'Anda belum terdaftar sebagai pemain. Gunakan !daftar [nama] untuk mendaftar.'
+      
+      player.addItem(returnedItem);
+      await MarketListing.findByIdAndDelete(listingId).session(session);
+      await player.save({ session });
+      
+      logger.info(`Player ${player.name} canceled listing for ${listing.quantity} ${listing.name}`);
+      
+      result = {
+        status: true,
+        message: `✅ Berhasil membatalkan listing ${listing.name} x${listing.quantity}. Item telah dikembalikan ke inventory Anda.`
       };
-    }
-    
-    // Update lastActivity
-    player.lastActivity = Date.now();
-    
-    // Cari listing berdasarkan ID
-    const listing = await MarketListing.findById(listingId);
-    
-    if (!listing) {
-      return {
-        status: false,
-        message: 'Listing tidak ditemukan. Mungkin sudah terjual atau dihapus.'
-      };
-    }
-    
-    // Cek apakah pemain adalah pemilik listing
-    if (listing.seller.toString() !== player._id.toString()) {
-      return {
-        status: false,
-        message: 'Anda tidak bisa membatalkan listing yang bukan milik Anda.'
-      };
-    }
-    
-    // Kembalikan item ke inventory pemain
-    const returnedItem = {
-      itemId: listing.itemId,
-      name: listing.name,
-      type: listing.type,
-      tier: listing.tier,
-      stats: listing.stats,
-      quantity: listing.quantity
-    };
-    
-    player.addItem(returnedItem);
-    
-    // Hapus listing
-    await MarketListing.findByIdAndDelete(listingId);
-    
-    // Simpan perubahan pada pemain
-    await player.save();
-    
-    logger.info(`Player ${player.name} canceled listing for ${listing.quantity} ${listing.name}`);
-    
-    return {
-      status: true,
-      message: `✅ Berhasil membatalkan listing ${listing.name} x${listing.quantity}. Item telah dikembalikan ke inventory Anda.`
-    };
+    });
+
+    return result;
   } catch (error) {
     logger.error(`Error canceling listing: ${error.message}`);
     return {
       status: false,
       message: `Terjadi kesalahan saat membatalkan listing: ${error.message}`
     };
+  } finally {
+    await session.endSession();
   }
 };
+
 
 /**
  * Melihat listing berdasarkan kategori

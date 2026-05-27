@@ -484,93 +484,12 @@ const generateDefaultQuest = (player, type) => {
  * @returns {Promise<Array>} - Daftar quest yang telah diupdate
  */
 const updateQuestProgress = async (userId, activityType, data) => {
-  try {
-    // Cari pemain
-    const player = await Player.findByUserId(userId);
-    
-    if (!player) {
-      logger.error(`Player not found for userId: ${userId}`);
-      return [];
-    }
-    
-    // Ambil quest aktif pemain
-    const activeQuests = player.quests ? player.quests.filter(q => !q.completed && !q.claimed) : [];
-    
-    if (!activeQuests || activeQuests.length === 0) {
-      return [];
-    }
-    
-    // Filter quest yang relevan dengan aktivitas
-    const updatedQuests = [];
-    
-    for (const quest of activeQuests) {
-      let updated = false;
-      
-      switch (activityType) {
-        case 'gather':
-          if (quest.type === QUEST_TYPES.GATHER && 
-              quest.requirements.resourceId === data.resourceId) {
-            quest.progress += data.amount || 1;
-            updated = true;
-          }
-          break;
-          
-        case 'hunt':
-          if (quest.type === QUEST_TYPES.HUNT && 
-              quest.requirements.monsterId === data.monsterId) {
-            quest.progress += data.amount || 1;
-            updated = true;
-          }
-          break;
-          
-        case 'craft':
-          if (quest.type === QUEST_TYPES.CRAFT && 
-              quest.requirements.itemId === data.itemId) {
-            quest.progress += data.amount || 1;
-            updated = true;
-          }
-          break;
-          
-        case 'explore':
-          if (quest.type === QUEST_TYPES.EXPLORE && 
-              quest.requirements.zoneId === data.zoneId) {
-            quest.progress += 1;
-            updated = true;
-          }
-          break;
-          
-        // Tambahkan case lain sesuai jenis quest
-      }
-      
-      // Cek apakah quest sudah selesai
-      if (updated) {
-        if (quest.progress >= quest.requirements.amount || 
-            (quest.type === QUEST_TYPES.EXPLORE && quest.progress >= quest.requirements.visitCount)) {
-          quest.completed = true;
-          
-          // Tambahkan notifikasi
-          player.notifications.push({
-            title: 'Quest Selesai',
-            content: `Quest "${quest.title}" telah selesai. Klaim hadiahmu!`,
-            timestamp: new Date(),
-            read: false
-          });
-        }
-        
-        updatedQuests.push(quest);
-      }
-    }
-    
-    // Simpan perubahan jika ada
-    if (updatedQuests.length > 0) {
-      await player.save();
-    }
-    
-    return updatedQuests;
-  } catch (error) {
-    logger.error(`Error updating quest progress: ${error.message}`);
-    return [];
-  }
+  logger.warn(
+    `quest_system_template.updateQuestProgress dipanggil untuk user ${userId} dengan activity ${activityType}, ` +
+    'tetapi helper template ini sudah deprecated dan tidak lagi terhubung ke model Quest + PlayerQuest aktif.'
+  );
+
+  return [];
 };
 
 module.exports = {

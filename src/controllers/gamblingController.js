@@ -1,6 +1,10 @@
 const Player = require('../models/Player');
 const logger = require('../utils/logger');
 
+const CHIP_BUY_RATE = 1.1;
+const MAX_SINGLE_BET_RATIO = 0.25;
+const MAX_SINGLE_BET_CAP = 5000;
+
 /**
  * Membeli chip untuk judi
  * @param {String} userId - ID pengguna WhatsApp
@@ -19,9 +23,9 @@ const buyChips = async (userId, amount) => {
     // Konversi amount ke number
     amount = parseInt(amount);
     
-    // Rate konversi Gmoney ke chip (1 Gmoney = 1 chip)
-    const conversionRate = 1;
-    const gmoneyNeeded = amount * conversionRate;
+    // Rate konversi Gmoney ke chip (lebih mahal agar chip tidak menjadi wrapper currency tanpa risiko)
+    const conversionRate = CHIP_BUY_RATE;
+    const gmoneyNeeded = Math.ceil(amount * conversionRate);
     
     const player = await Player.findByUserId(userId);
     
@@ -50,7 +54,7 @@ const buyChips = async (userId, amount) => {
     
     return {
       status: true,
-      message: `Berhasil membeli ${amount} chip dengan ${gmoneyNeeded} Gmoney.\nTotal chip Anda sekarang: ${player.chips}`
+      message: `Berhasil membeli ${amount} chip dengan ${gmoneyNeeded} Gmoney.\nRate beli: 1 chip = ${conversionRate} Gmoney\nTotal chip Anda sekarang: ${player.chips}`
     };
   } catch (error) {
     logger.error(`Error buying chips: ${error.message}`);
@@ -166,11 +170,11 @@ const playDice = async (userId, bet, choice) => {
       };
     }
     
-    // Cek apakah pemain memiliki cukup chip
-    if (player.chips < bet) {
+    const maxAllowedBet = Math.min(MAX_SINGLE_BET_CAP, Math.max(1, Math.floor(player.chips * MAX_SINGLE_BET_RATIO)));
+    if (bet > maxAllowedBet) {
       return {
         status: false,
-        message: `Chip tidak cukup. Anda membutuhkan ${bet} chip untuk bermain.`
+        message: `Taruhan terlalu besar. Maksimal taruhan sekali main adalah ${maxAllowedBet} chip.`
       };
     }
     
@@ -260,11 +264,11 @@ const playSlot = async (userId, bet) => {
       };
     }
     
-    // Cek apakah pemain memiliki cukup chip
-    if (player.chips < bet) {
+    const maxAllowedBet = Math.min(MAX_SINGLE_BET_CAP, Math.max(1, Math.floor(player.chips * MAX_SINGLE_BET_RATIO)));
+    if (bet > maxAllowedBet) {
       return {
         status: false,
-        message: `Chip tidak cukup. Anda membutuhkan ${bet} chip untuk bermain.`
+        message: `Taruhan terlalu besar. Maksimal taruhan sekali main adalah ${maxAllowedBet} chip.`
       };
     }
     

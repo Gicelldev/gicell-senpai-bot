@@ -1,4 +1,17 @@
 const mongoose = require('mongoose');
+const { PlayerQuest } = require('./Quest');
+
+const getPlayerSkillLevel = (player, skillName) => {
+  if (!player || !player.stats) {
+    return 0;
+  }
+
+  if (skillName === 'crafting') {
+    return player.stats.crafting || 0;
+  }
+
+  return player.stats.gathering?.[skillName] || 0;
+};
 
 /**
  * Schema untuk quest chain (rantai quest)
@@ -175,6 +188,20 @@ PlayerQuestChainSchema.index({ player: 1, currentQuest: 1 });
 QuestChainSchema.statics.findAvailableForPlayer = async function(player) {
   // Dapatkan semua quest chain aktif
   const allChains = await this.find({ isActive: true }).populate('prerequisites.chains prerequisites.quests');
+  const PlayerQuestChain = mongoose.model('PlayerQuestChain');
+
+  const completedChainRows = await PlayerQuestChain.find({
+    player: player._id,
+    status: 'completed'
+  }).select('questChain');
+
+  const completedQuestRows = await PlayerQuest.find({
+    player: player._id,
+    isCompleted: true
+  }).select('quest');
+
+  const completedChainIds = new Set(completedChainRows.map(row => row.questChain.toString()));
+  const completedQuestIds = new Set(completedQuestRows.map(row => row.quest.toString()));
   
   // Filter quest chain yang memenuhi prasyarat
   const availableChains = allChains.filter(chain => {
@@ -186,8 +213,8 @@ QuestChainSchema.statics.findAvailableForPlayer = async function(player) {
     // Cek prasyarat skill (jika ada)
     if (chain.prerequisites.skills && chain.prerequisites.skills.length > 0) {
       for (const skillReq of chain.prerequisites.skills) {
-        const playerSkill = player.skills.find(s => s.name === skillReq.skill);
-        if (!playerSkill || playerSkill.level < skillReq.level) {
+        const playerSkillLevel = getPlayerSkillLevel(player, skillReq.skill);
+        if (playerSkillLevel < skillReq.level) {
           return false;
         }
       }
@@ -196,10 +223,7 @@ QuestChainSchema.statics.findAvailableForPlayer = async function(player) {
     // Cek prasyarat quest chain sebelumnya
     if (chain.prerequisites.chains && chain.prerequisites.chains.length > 0) {
       for (const prereqChain of chain.prerequisites.chains) {
-        const completed = player.questChains.some(
-          pqc => pqc.questChain.equals(prereqChain._id) && pqc.status === 'completed'
-        );
-        if (!completed) {
+        if (!completedChainIds.has(prereqChain._id.toString())) {
           return false;
         }
       }
@@ -208,10 +232,7 @@ QuestChainSchema.statics.findAvailableForPlayer = async function(player) {
     // Cek prasyarat quest individu
     if (chain.prerequisites.quests && chain.prerequisites.quests.length > 0) {
       for (const prereqQuest of chain.prerequisites.quests) {
-        const completed = player.quests.some(
-          pq => pq.quest.equals(prereqQuest._id) && pq.isCompleted
-        );
-        if (!completed) {
+        if (!completedQuestIds.has(prereqQuest._id.toString())) {
           return false;
         }
       }

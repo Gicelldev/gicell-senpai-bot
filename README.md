@@ -1,201 +1,203 @@
 # Gicell Senpai Bot
 
-Bot WhatsApp berbasis game Gicell Senpai yang memungkinkan pemain untuk menikmati fitur-fitur game Gicell Senpai melalui platform WhatsApp.
+Bot WhatsApp RPG berbasis Node.js + Baileys untuk memainkan sistem karakter, gathering, combat, guild, market, dan quest langsung dari WhatsApp.
 
-## Fitur Utama
+## Status Proyek
 
-- **Sistem Karakter**: Buat dan kembangkan karakter dengan statistik yang berbeda
-- **Gathering & Crafting**: Kumpulkan resource dan buat berbagai item
-- **PvE & PvP**: Bertarung melawan monster atau pemain lain
-- **Ekonomi**: Sistem perdagangan dengan mata uang Gmoney
-- **Guild System**: Buat atau bergabung dengan guild untuk bermain bersama
-- **Zona**: Jelajahi area berbeda dengan tingkat risiko dan reward berbeda
-- **Monster System**: Bertarung dengan berbagai jenis monster di setiap zona
-- **Quest System**: Selesaikan misi dan dapatkan hadiah
+Repo ini sedang melalui fase stabilisasi arsitektur.
+Fokus refactor terbaru adalah:
 
+- menyatukan progres pemain ke **satu source of truth** di model `Player`
+- memindahkan sistem quest ke kombinasi **`Quest` + `PlayerQuest`**
+- memperbaiki integrasi **guild donation**, **marketplace**, dan **storyline/quest chain**
+- menambahkan **economic sink** dasar agar sirkulasi Gmoney lebih sehat
+- mengurangi risiko partial-save lewat **Mongoose transaction session** pada mutasi penting
 
-## Cara Instalasi
+## Fitur yang Saat Ini Stabil
 
-### Metode 1: Instalasi Lokal
+- **Sistem Karakter**
+  - registrasi pemain
+  - profil dasar
+  - equipment, inventory, level, experience, gmoney, chips
+- **Gathering & Crafting**
+  - gather resource canonical: `wood`, `stone`, `ore`, `fiber`, `hide`
+  - resource hasil gather terhubung ke inventory dan guild donation
+  - crafting berbasis item seed
+- **Combat & Progression**
+  - PvE combat
+  - drop item dan reward Gmoney
+  - progression level memakai helper `addExperience()` yang sudah diperbaiki
+- **Quest System**
+  - quest harian / mingguan melalui `Quest` + `PlayerQuest`
+  - klaim reward quest via command WhatsApp
+  - update progress quest dari aktivitas terkait
+- **Quest Chain / Storyline**
+  - prerequisite quest chain sekarang mengikuti data aktif di collection, bukan field player legacy
+- **Guild System**
+  - join / leave / info guild
+  - donation gmoney dan resource
+  - bug double-count treasury sudah diperbaiki
+- **Marketplace**
+  - jual, beli, batal listing
+  - listing fee, sale tax, price floor dasar
+  - mutasi listing dan inventory sudah dibungkus transaction session
+- **Gambling**
+  - beli / jual chip
+  - dice dan slot
+  - chip buy fee + max bet cap dasar untuk menahan inflasi
 
-1. Clone repository ini
-   ```
-   git clone https://github.com/yourusername/gicell-senpai-bot.git
-   ```
+## Fitur yang Masih Perlu Hardening Lanjutan
 
-2. Instal dependencies
-   ```
-   npm install
-   ```
+- balancing ekonomi lanjutan untuk faucet combat/gather
+- validasi transaction fallback bila MongoDB berjalan tanpa replica set
+- test automation dan smoke test end-to-end
+- sinkronisasi dokumentasi command dengan seluruh controller aktual
+- cleanup tambahan untuk fitur draft yang belum terintegrasi penuh
 
-3. Salin file `.env.example` ke `.env` dan sesuaikan konfigurasi
+## Instalasi
 
-4. Jalankan aplikasi
-   ```
-   npm run dev
-   ```
+### Lokal
 
-5. Scan QR code yang muncul untuk menghubungkan dengan WhatsApp
-
-### Metode 2: Menggunakan Docker
-
-1. Clone repository ini
-   ```
+1. Clone repository
+   ```bash
    git clone https://github.com/Gicelldev/gicell-senpai-bot.git
    ```
 
-2. Buat file `.env` dengan variabel yang diperlukan
-   ```
-   ADMIN_NUMBER=628xxxxxxxxxx
-   ADMIN_USERNAME=admin
-   ADMIN_PASSWORD=admin123
+2. Install dependency
+   ```bash
+   npm install
    ```
 
-3. Jalankan dengan Docker Compose
+3. Siapkan file `.env`
+
+4. Jalankan bot
+   ```bash
+   npm run dev
    ```
+
+5. Scan QR WhatsApp yang muncul di terminal
+
+### Docker
+
+1. Clone repository
+2. Siapkan `.env`
+3. Jalankan:
+   ```bash
    docker-compose up -d
    ```
 
-4. Lihat log untuk QR code
-   ```
-   docker-compose logs -f app
-   ```
-
-5. Scan QR code yang muncul untuk menghubungkan dengan WhatsApp
-
-## Perintah Bot
+## Command Utama
 
 | Perintah | Deskripsi |
 |----------|-----------|
-| !daftar | Mendaftar sebagai pemain baru |
-| !profil | Melihat status karakter |
-| !gather [type] | Mengumpulkan resource tertentu |
-| !craft [item] | Membuat item dari resource |
-| !serang [monster/player] | Menyerang monster atau pemain |
-| !pasar | Melihat marketplace |
-| !guild | Melihat atau mengelola guild |
-| !help | Menampilkan semua perintah yang tersedia |
-| !monster | Menampilkan daftar monster dan statistiknya |
-| !quest | Melihat quest yang tersedia |
-| !storyline | Melihat quest chain/cerita yang tersedia |
+| `!daftar [nama]` | Mendaftar pemain baru |
+| `!profil` | Lihat profil karakter |
+| `!inventory` | Lihat inventory |
+| `!gather [resource]` | Gather resource |
+| `!craft [item]` | Craft item |
+| `!serang [target]` | Combat monster / target |
+| `!pasar` | Lihat marketplace |
+| `!jual [item] [harga] [jumlah]` | Buat listing market |
+| `!beli [listingId] [jumlah]` | Beli item market |
+| `!guild` | Lihat / kelola guild |
+| `!guild sumbang [tipe] [jumlah]` | Donasi guild |
+| `!quest` | Lihat quest aktif |
+| `!quest harian` | Lihat quest harian |
+| `!quest mingguan` | Lihat quest mingguan |
+| `!quest klaim [id]` | Klaim reward quest |
+| `!storyline` | Lihat quest chain / storyline |
+| `!help` | Bantuan command |
 
-## Todo & Roadmap
+## Catatan Arsitektur Penting
 
-### Fitur yang Sudah Diimplementasikan ✅
+### Player Progression
 
-- **Persiapan Awal**: Pengaturan lingkungan Node.js, repository Git, dan struktur database
-- **Autentikasi & Koneksi**: QR code login, penerimaan dan pengiriman pesan
-- **Sistem Manajemen Pemain**: Pendaftaran, login, dan profil pemain
-- **Fitur Utama Game**: Sistem karakter, pertarungan PvE, gathering resource, crafting, dan zona
-- **Ekonomi & Perdagangan**: Marketplace, transaksi antar pemain, mata uang Gmoney, dan sistem judi
-- **Interaksi Sosial**: Sistem guild/clan, chat antar pemain, notifikasi
-- **Mini-Game**: Dungeon sederhana, sistem loot, PvP tekstual, quest harian dan mingguan
-- **Admin & Monitoring**: Dashboard admin, monitoring, backup database
-- **Sistem Quest Dinamis**: Quest generator, tracking otomatis, quest chain, dan achievement system
-- **Item Development**: Item Tier 3 (Journeyman) dan Tier 4 (Adept)
+Progress pemain yang aktif sekarang mengandalkan field berikut di model `Player`:
 
-### Fitur yang Sedang Dikembangkan 🚧
+- `level`
+- `experience`
+- `gmoney`
+- `chips`
+- `inventory`
+- `equipment`
+- `stats`
 
-- **Item & Crafting Kompleks**:
-  - [ ] Item Tier 5-8 (Expert hingga Elder items)
-  - [ ] Sistem enchantment item
-  - [ ] Sistem upgrade/refinement item
-  - [ ] Sistem set item dengan bonus
-  - [ ] Sistem crafting lanjutan
-  - [ ] Item khusus dengan efek unik
+Field legacy seperti `player.exp`, `player.quests`, `player.skills`, dan field serupa **bukan acuan aktif** untuk flow refactor terbaru.
 
-- **Sistem Quest Lanjutan**:
-  - [ ] Sistem quest guild
-  - [ ] Event quest dan seasonal quest
+### Quest Model
 
-- **Expansion Content**:
-  - [ ] Sistem pet/companion
-  - [ ] Housing/Land system
-  - [ ] Sistem profesi lanjutan
-  - [ ] PvP arena dan turnamen
+Quest aktif sekarang mengikuti pola:
 
-## Dashboard Admin
+- `Quest` untuk definisi quest
+- `PlayerQuest` untuk progress pemain
+- `QuestChain` + `PlayerQuestChain` untuk storyline
 
-Bot ini dilengkapi dengan dashboard admin yang dapat diakses melalui:
+### Resource Naming
 
-```
-http://localhost:6765/admin
-```
+Penamaan resource sudah distandarisasi ke bentuk canonical:
 
-Gunakan username dan password yang telah dikonfigurasi di file `.env` untuk login.
+- `wood`
+- `stone`
+- `ore`
+- `fiber`
+- `hide`
+
+Item inventory resource bisa tetap berupa tiered item seperti:
+
+- `rough_logs`
+- `simple_ore`
+- `journeyman_fiber`
+
+Helper model pemain akan melakukan mapping canonical saat dibutuhkan.
 
 ## Struktur Folder
 
-```
+```text
 gicell-senpai-bot/
-├── src/                 # Kode sumber aplikasi
-│   ├── controllers/     # Controller untuk menangani perintah
-│   ├── models/          # Model database
-│   ├── routes/          # Routes untuk API dan admin dashboard
-│   ├── utils/           # Utilitas dan helper
-│   ├── data/            # Data seed untuk database
-│   ├── index.js         # Entry point aplikasi
-│   ├── database.js      # Konfigurasi database
-│   └── whatsapp.js      # Konfigurasi koneksi WhatsApp
-├── logs/                # Log aplikasi
-├── session/             # Data sesi WhatsApp
-├── .env.example         # Contoh file konfigurasi
-├── package.json         # Konfigurasi NPM
-├── Dockerfile           # Konfigurasi Docker
-└── docker-compose.yml   # Konfigurasi Docker Compose
+├── src/
+│   ├── controllers/
+│   ├── models/
+│   ├── routes/
+│   ├── utils/
+│   ├── data/
+│   ├── index.js
+│   ├── database.js
+│   └── whatsapp.js
+├── logs/
+├── session/
+├── package.json
+├── Dockerfile
+└── docker-compose.yml
 ```
 
-## Teknologi yang Digunakan
+## Teknologi
 
 - Node.js
-- Baileys/WhiskeySockets (WhatsApp Web API)
-- MongoDB
-- Express.js (untuk dashboard admin)
-- Jest (untuk testing)
+- `@whiskeysockets/baileys`
+- MongoDB + Mongoose
+- Express.js
+- Winston
+- Jest
+
+## Verifikasi Lokal
+
+Perintah yang diharapkan tersedia:
+
+```bash
+npm test
+```
+
+Namun verifikasi hanya akan berjalan jika dependency benar-benar sudah terinstall.
+Jika environment belum menjalankan `npm install`, maka module seperti `mongoose` atau binary seperti `jest` akan gagal dimuat.
 
 ## Kontribusi
 
-Kami sangat menghargai kontribusi dari para pengembang untuk memperbaiki dan meningkatkan Gicell Senpai Bot.
+Jika ingin lanjut refactor, prioritas yang direkomendasikan:
 
-### Cara Berkontribusi
-
-1. **Fork Repository**
-   - Fork repository ini ke akun GitHub Anda
-
-2. **Clone Repository yang Sudah di-Fork**
-   ```
-   git clone https://github.com/username-anda/gicell-senpai-bot.git
-   ```
-
-3. **Buat Branch Baru**
-   ```
-   git checkout -b fitur-baru
-   ```
-
-4. **Lakukan Perubahan**
-   - Tambahkan fitur baru atau perbaiki bug
-   - Pastikan kode mengikuti standar yang ada
-
-5. **Commit Perubahan**
-   ```
-   git commit -m "Menambahkan fitur: deskripsi singkat"
-   ```
-
-6. **Push ke Branch Anda**
-   ```
-   git push origin fitur-baru
-   ```
-
-7. **Buat Pull Request**
-   - Buat Pull Request dari branch Anda ke branch `main` repository utama
-   - Jelaskan perubahan yang telah Anda lakukan
-
-### Panduan Kontribusi
-
-- Pastikan kode yang Anda tulis mengikuti standar kode yang telah ada
-- Tambahkan komentar pada fungsi-fungsi penting
-- Uji perubahan sebelum melakukan pull request
-- Update dokumentasi jika diperlukan
+1. tambah smoke/integration test untuk market, guild, quest
+2. audit fitur draft yang belum terhubung penuh
+3. evaluasi balancing combat/gather terhadap inflasi Gmoney
+4. perketat fallback untuk transaction saat MongoDB non-replica
 
 ## Lisensi
 
@@ -203,4 +205,4 @@ MIT
 
 ## Author
 
-Gicell Senpai Developer # gicell-senpai-bot
+Gicell Senpai Developer

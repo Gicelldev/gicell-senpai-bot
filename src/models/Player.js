@@ -12,12 +12,17 @@ const InventoryItemSchema = new mongoose.Schema({
   },
   quantity: {
     type: Number,
-    default: 1
+    default: 1,
+    min: 0
   },
   type: {
     type: String,
     enum: ['weapon', 'armor', 'resource', 'consumable'],
     required: true
+  },
+  subType: {
+    type: String,
+    default: null
   },
   tier: {
     type: Number,
@@ -125,19 +130,23 @@ const PlayerSchema = new mongoose.Schema({
   },
   level: {
     type: Number,
-    default: 1
+    default: 1,
+    min: 1
   },
   experience: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   },
   gmoney: {
     type: Number,
-    default: 1000
+    default: 1000,
+    min: 0
   },
   chips: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   },
   inventory: {
     type: [InventoryItemSchema],
@@ -175,62 +184,160 @@ const PlayerSchema = new mongoose.Schema({
   }
 });
 
+const RESOURCE_ALIASES = {
+  wood: ['wood', 'logs'],
+  stone: ['stone'],
+  ore: ['ore'],
+  fiber: ['fiber'],
+  hide: ['hide']
+};
+
 // Method untuk mendapatkan level berikutnya
-PlayerSchema.methods.getNextLevelExp = function() {
-  return this.level * 100;
+PlayerSchema.methods.getNextLevelExp = function(level = this.level) {
+  return level * 100;
 };
 
 // Method untuk menambah experience
 PlayerSchema.methods.addExperience = function(amount) {
-  this.experience += amount;
-  const nextLevelExp = this.getNextLevelExp();
-  
-  // Check jika naik level
-  while (this.experience >= nextLevelExp) {
+  const normalizedAmount = Number(amount) || 0;
+  if (normalizedAmount <= 0) {
+    return {
+      level: this.level,
+      levelsGained: 0,
+      experience: this.experience,
+      nextLevelExp: this.getNextLevelExp()
+    };
+  }
+
+  this.experience += normalizedAmount;
+  const previousLevel = this.level;
+
+  while (this.experience >= this.getNextLevelExp()) {
+    const nextLevelExp = this.getNextLevelExp();
     this.experience -= nextLevelExp;
     this.level += 1;
-    
+
     // Tingkatkan stats ketika naik level
     this.stats.maxHealth += 10;
     this.stats.health = this.stats.maxHealth;
     this.stats.attack += 2;
     this.stats.defense += 1;
   }
-  
-  return this.level;
+
+  return {
+    level: this.level,
+    levelsGained: this.level - previousLevel,
+    experience: this.experience,
+    nextLevelExp: this.getNextLevelExp()
+  };
+};
+
+PlayerSchema.methods.getInventoryItem = function(itemIdOrName) {
+  if (!itemIdOrName) {
+    return null;
+  }
+
+  const query = itemIdOrName.toLowerCase();
+  return this.inventory.find(i =>
+    i.itemId.toLowerCase() === query ||
+    i.name.toLowerCase() === query
+  ) || null;
+};
+
+PlayerSchema.methods.getResourceItemsByType = function(resourceType) {
+  if (!resourceType) {
+    return [];
+  }
+
+  const normalizedType = resourceType.toLowerCase();
+  const aliases = RESOURCE_ALIASES[normalizedType] || [normalizedType];
+
+  return this.inventory.filter(item => {
+    if (item.type !== 'resource') {
+      return false;
+    }
+
+    const itemId = item.itemId.toLowerCase();
+    return aliases.some(alias => itemId.endsWith(`_${alias}`) || itemId === alias);
+  });
+};
+
+PlayerSchema.methods.getTotalResourceQuantity = function(resourceType) {
+  return this.getResourceItemsByType(resourceType)
+    .reduce((total, item) => total + item.quantity, 0);
+};
+
+PlayerSchema.methods.consumeResource = function(resourceType, quantity = 1) {
+  const normalizedQuantity = Number(quantity) || 0;
+  if (normalizedQuantity <= 0) {
+    return true;
+  }
+
+  const matchingItems = this.getResourceItemsByType(resourceType)
+    .sort((a, b) => a.tier - b.tier);
+
+  let remaining = normalizedQuantity;
+  for (const item of matchingItems) {
+    if (remaining <= 0) {
+      break;
+    }
+
+    const used = Math.min(item.quantity, remaining);
+    item.quantity -= used;
+    remaining -= used;
+  }
+
+  this.inventory = this.inventory.filter(item => item.quantity > 0);
+  return remaining === 0;
 };
 
 // Method untuk menambah item ke inventory
 PlayerSchema.methods.addItem = function(item) {
-  const existingItem = this.inventory.find(i => 
-    i.itemId === item.itemId && 
-    i.type === item.type &&
-    (!item.stats || JSON.stringify(i.stats) === JSON.stringify(item.stats))
+  const normalizedItem = {
+    itemId: item.itemId,
+    name: item.name,
+    quantity: item.quantity || 1,
+    type: item.type,
+    subType: item.subType || null,
+    tier: item.tier || 1,
+    stats: item.stats || {}
+  };
+
+  const existingItem = this.inventory.find(i =>
+    i.itemId === normalizedItem.itemId &&
+    i.type === normalizedItem.type &&
+    i.subType === normalizedItem.subType &&
+    JSON.stringify(i.stats || {}) === JSON.stringify(normalizedItem.stats || {})
   );
-  
-  if (existingItem && ['resource', 'consumable'].includes(item.type)) {
-    existingItem.quantity += item.quantity || 1;
+
+  if (existingItem && ['resource', 'consumable'].includes(normalizedItem.type)) {
+    existingItem.quantity += normalizedItem.quantity;
   } else {
-    this.inventory.push(item);
+    this.inventory.push(normalizedItem);
   }
 };
 
 // Method untuk menghapus item dari inventory
 PlayerSchema.methods.removeItem = function(itemId, quantity = 1) {
+  const normalizedQuantity = Number(quantity) || 1;
   const itemIndex = this.inventory.findIndex(i => i.itemId === itemId);
-  
+
   if (itemIndex === -1) {
     return false;
   }
-  
+
   const item = this.inventory[itemIndex];
-  
-  if (item.quantity > quantity) {
-    item.quantity -= quantity;
+
+  if (item.quantity < normalizedQuantity) {
+    return false;
+  }
+
+  if (item.quantity > normalizedQuantity) {
+    item.quantity -= normalizedQuantity;
   } else {
     this.inventory.splice(itemIndex, 1);
   }
-  
+
   return true;
 };
 
@@ -240,7 +347,7 @@ PlayerSchema.pre('save', function(next) {
   if (this.phoneNumber && this.phoneNumber.includes('@')) {
     this.phoneNumber = this.phoneNumber.split('@')[0];
   }
-  
+
   next();
 });
 
@@ -250,13 +357,13 @@ PlayerSchema.statics.findPlayerByPhoneNumber = function(phoneNumber) {
   if (!phoneNumber) {
     return Promise.resolve(null);
   }
-  
+
   // Bersihkan phoneNumber jika dalam format WhatsApp
   let cleanPhoneNumber = phoneNumber;
   if (phoneNumber.includes('@')) {
     cleanPhoneNumber = phoneNumber.split('@')[0];
   }
-  
+
   // Coba cari berdasarkan phoneNumber, jika gagal coba cari berdasarkan userId
   // (karena beberapa kasus phoneNumber = userId)
   return this.findOne({ $or: [
@@ -274,4 +381,4 @@ PlayerSchema.statics.findByUserId = function(userId) {
 
 const Player = mongoose.model('Player', PlayerSchema);
 
-module.exports = Player; 
+module.exports = Player;

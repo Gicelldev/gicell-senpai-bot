@@ -2,103 +2,219 @@ const Player = require('../models/Player');
 const { Quest, PlayerQuest } = require('../models/Quest');
 const { createNotification } = require('./notificationController');
 const logger = require('../utils/logger');
-const mongoose = require('mongoose');
-const Item = require('../models/Item');
-const questGenerator = require('../data/quest_system_template');
 
-/**
- * Menampilkan daftar quest yang tersedia
- * @param {String} userId - ID pengguna WhatsApp
- * @param {String} type - Tipe quest (daily, weekly, all)
- * @returns {Object} - Status dan pesan respons
- */
+const QUEST_TYPE_ALIASES = {
+  harian: 'daily',
+  daily: 'daily',
+  mingguan: 'weekly',
+  weekly: 'weekly',
+  semua: 'all',
+  all: 'all'
+};
+
+const applyQuestRewards = async (player, quest) => {
+  const rewardSummary = {
+    experience: 0,
+    gmoney: 0,
+    items: []
+  };
+
+  for (const reward of quest.rewards) {
+    if (reward.type === 'experience') {
+      rewardSummary.experience += reward.quantity;
+      player.addExperience(reward.quantity);
+    } else if (reward.type === 'gmoney') {
+      rewardSummary.gmoney += reward.quantity;
+      player.gmoney += reward.quantity;
+    } else if (reward.type === 'item' && reward.itemId) {
+      const itemReward = {
+        itemId: reward.itemId,
+        name: reward.description.replace(/^Item: /i, '') || reward.itemId,
+        type: 'resource',
+        quantity: reward.quantity,
+        tier: 1,
+        stats: {}
+      };
+
+      player.addItem(itemReward);
+      rewardSummary.items.push(itemReward);
+    }
+  }
+
+  await player.save();
+  return rewardSummary;
+};
+
+const ensurePlayerQuest = async (playerId, quest) => {
+  let playerQuest = await PlayerQuest.findOne({
+    player: playerId,
+    quest: quest._id
+  });
+
+  if (!playerQuest) {
+    playerQuest = new PlayerQuest({
+      player: playerId,
+      quest: quest._id,
+      progress: quest.requirements.map((_, index) => ({
+        requirementIndex: index,
+        current: 0,
+        completed: false
+      }))
+    });
+
+    await playerQuest.save();
+  }
+
+  return playerQuest;
+};
+
+const generateNewQuests = async (player) => {
+  try {
+    const activeQuestRows = await PlayerQuest.find({
+      player: player._id,
+      isRewarded: false
+    }).populate('quest');
+
+    const activeDailyQuestIds = activeQuestRows
+      .filter(row => row.quest && row.quest.type === 'daily')
+      .map(row => row.quest._id.toString());
+
+    const activeWeeklyQuestIds = activeQuestRows
+      .filter(row => row.quest && row.quest.type === 'weekly')
+      .map(row => row.quest._id.toString());
+
+    const dailyCandidates = await Quest.findActiveByLevel(player.level, 'daily', 10);
+    const weeklyCandidates = await Quest.findActiveByLevel(player.level, 'weekly', 10);
+
+    const dailyToAssign = dailyCandidates
+      .filter(quest => !activeDailyQuestIds.includes(quest._id.toString()))
+      .slice(0, Math.max(0, 3 - activeDailyQuestIds.length));
+
+    const weeklyToAssign = weeklyCandidates
+      .filter(quest => !activeWeeklyQuestIds.includes(quest._id.toString()))
+      .slice(0, Math.max(0, 1 - activeWeeklyQuestIds.length));
+
+    const assigned = [...dailyToAssign, ...weeklyToAssign];
+    for (const quest of assigned) {
+      await ensurePlayerQuest(player._id, quest);
+    }
+
+    if (assigned.length > 0) {
+      await createNotification(
+        player._id,
+        'quest',
+        'Quest Baru Tersedia',
+        `${assigned.length} quest baru telah tersedia. Gunakan !quest untuk melihat daftar quest.`
+      );
+    }
+
+    return assigned;
+  } catch (error) {
+    logger.error(`Error generating new quests: ${error.message}`);
+    return [];
+  }
+};
+
+const formatQuestList = (playerQuests, title) => {
+  let questList = '';
+
+  for (const playerQuest of playerQuests) {
+    const quest = playerQuest.quest;
+    if (!quest) {
+      continue;
+    }
+
+    let progressText = '';
+    for (let i = 0; i < quest.requirements.length; i++) {
+      const req = quest.requirements[i];
+      const progress = playerQuest.progress.find(p => p.requirementIndex === i) || {
+        current: 0,
+        completed: false
+      };
+
+      progressText += `  - ${req.description}: ${progress.current}/${req.quantity} ${progress.completed ? '✅' : '⬜'}\n`;
+    }
+
+    let rewardsText = '';
+    for (const reward of quest.rewards) {
+      rewardsText += `  - ${reward.description}\n`;
+    }
+
+    questList += `${quest.title} (${quest.type}) ${playerQuest.isCompleted ? '✅' : '⬜'}\n`;
+    questList += `${quest.description}\n`;
+    questList += `ID: ${quest._id}\n`;
+    questList += `Progress:\n${progressText}`;
+    questList += `Hadiah:\n${rewardsText}`;
+
+    if (playerQuest.isCompleted && !playerQuest.isRewarded) {
+      questList += `Quest telah selesai! Gunakan !quest klaim ${quest._id} untuk mengklaim hadiah.\n`;
+    } else if (playerQuest.isRewarded) {
+      questList += 'Hadiah telah diklaim.\n';
+    }
+
+    questList += '\n';
+  }
+
+  return {
+    status: true,
+    message: `📜 QUEST ${title.toUpperCase()} 📜\n\n${questList || 'Tidak ada quest aktif saat ini.'}`
+  };
+};
+
 const viewQuests = async (userId, type = 'all') => {
   try {
-    // Cari pemain dalam database
     const player = await Player.findByUserId(userId);
-    
+
     if (!player) {
       return {
         status: false,
         message: 'Anda belum terdaftar sebagai pemain. Gunakan !daftar [nama] untuk mendaftar.'
       };
     }
-    
-    // Update lastActivity
+
     player.lastActivity = Date.now();
     await player.save();
-    
-    // Cari quest aktif pemain
-    const playerQuests = await PlayerQuest.findActiveForPlayer(player._id);
-    
+
+    const normalizedType = QUEST_TYPE_ALIASES[type] || 'all';
+
+    let playerQuests = await PlayerQuest.find({
+      player: player._id,
+      isRewarded: false
+    })
+      .populate('quest')
+      .sort({ startedAt: -1 });
+
+    playerQuests = playerQuests.filter(row => row.quest && row.quest.isActive);
+
     if (playerQuests.length === 0) {
-      // Ambil quest baru sesuai level pemain
-      await generateNewQuests(player);
-      
-      return {
-        status: true,
-        message: `📜 QUEST 📜\n\nQuest baru telah tersedia. Silakan gunakan !quest lagi untuk melihat daftar quest.`
-      };
+      const generated = await generateNewQuests(player);
+      if (generated.length === 0) {
+        return {
+          status: true,
+          message: '📜 QUEST 📜\n\nBelum ada quest yang tersedia untuk level Anda saat ini.'
+        };
+      }
+
+      playerQuests = await PlayerQuest.find({
+        player: player._id,
+        isRewarded: false
+      })
+        .populate('quest')
+        .sort({ startedAt: -1 });
     }
-    
-    // Filter quest berdasarkan tipe
-    let filteredQuests = playerQuests;
-    if (type !== 'all') {
-      filteredQuests = playerQuests.filter(q => q.quest.type === type);
-    }
-    
+
+    const filteredQuests = normalizedType === 'all'
+      ? playerQuests
+      : playerQuests.filter(row => row.quest && row.quest.type === normalizedType);
+
     if (filteredQuests.length === 0) {
       return {
         status: true,
-        message: `📜 QUEST ${type.toUpperCase()} 📜\n\nAnda tidak memiliki quest ${type} yang aktif saat ini.`
+        message: `📜 QUEST ${normalizedType.toUpperCase()} 📜\n\nAnda tidak memiliki quest ${normalizedType} yang aktif saat ini.`
       };
     }
-    
-    // Buat pesan daftar quest
-    let questList = '';
-    for (const playerQuest of filteredQuests) {
-      const quest = playerQuest.quest;
-      
-      // Hitung progress
-      let progressText = '';
-      let isCompleted = true;
-      
-      for (let i = 0; i < quest.requirements.length; i++) {
-        const req = quest.requirements[i];
-        const progress = playerQuest.progress.find(p => p.requirementIndex === i) || { current: 0, completed: false };
-        
-        progressText += `  - ${req.description}: ${progress.current}/${req.quantity} ${progress.completed ? '✅' : '⬜'}\n`;
-        
-        if (!progress.completed) {
-          isCompleted = false;
-        }
-      }
-      
-      // Format quest
-      questList += `${quest.title} (${quest.type}) ${isCompleted ? '✅' : '⬜'}\n`;
-      questList += `${quest.description}\n`;
-      questList += `Progress:\n${progressText}\n`;
-      
-      // Tampilkan hadiah
-      questList += `Hadiah:\n`;
-      quest.rewards.forEach(reward => {
-        questList += `  - ${reward.description}\n`;
-      });
-      
-      // Tampilkan status klaim hadiah
-      if (playerQuest.isCompleted && !playerQuest.isRewarded) {
-        questList += `\nQuest telah selesai! Gunakan !quest klaim ${quest._id} untuk mengklaim hadiah.\n`;
-      } else if (playerQuest.isRewarded) {
-        questList += `\nHadiah telah diklaim.\n`;
-      }
-      
-      questList += `\n`;
-    }
-    
-    return {
-      status: true,
-      message: `📜 QUEST ${type.toUpperCase()} 📜\n\n${questList}`
-    };
+
+    return formatQuestList(filteredQuests, normalizedType);
   } catch (error) {
     logger.error(`Error viewing quests: ${error.message}`);
     return {
@@ -108,134 +224,116 @@ const viewQuests = async (userId, type = 'all') => {
   }
 };
 
-/**
- * Klaim reward dari quest yang sudah selesai
- * @param {Object} req - Request object
- * @param {Object} res - Response object
- */
-const claimQuestReward = async (req, res) => {
+const claimQuestReward = async (userId, questId) => {
   try {
-    const userId = req.player.userId;
-    const { questId } = req.body;
-
     if (!questId) {
-      return res.status(400).json({ success: false, message: 'ID quest diperlukan' });
+      return {
+        status: false,
+        message: 'ID quest diperlukan. Contoh: !quest klaim [id_quest]'
+      };
     }
 
-    // Validasi player
-    const player = await Player.findOne({ userId });
+    const player = await Player.findByUserId(userId);
     if (!player) {
-      return res.status(404).json({ success: false, message: 'Player tidak ditemukan' });
+      return {
+        status: false,
+        message: 'Anda belum terdaftar sebagai pemain. Gunakan !daftar [nama] untuk mendaftar.'
+      };
     }
 
-    // Cari quest yang akan diklaim
-    const questIndex = player.quests.findIndex(
-      q => q.id.toString() === questId && q.completed && !q.claimed
+    const playerQuest = await PlayerQuest.findOne({
+      player: player._id,
+      quest: questId
+    }).populate('quest');
+
+    if (!playerQuest || !playerQuest.quest) {
+      return {
+        status: false,
+        message: 'Quest tidak ditemukan.'
+      };
+    }
+
+    if (!playerQuest.isCompleted) {
+      return {
+        status: false,
+        message: 'Quest ini belum selesai.'
+      };
+    }
+
+    if (playerQuest.isRewarded) {
+      return {
+        status: false,
+        message: 'Hadiah quest ini sudah pernah diklaim.'
+      };
+    }
+
+    const rewardSummary = await applyQuestRewards(player, playerQuest.quest);
+    playerQuest.isRewarded = true;
+    await playerQuest.save();
+
+    const rewardLines = [];
+    if (rewardSummary.experience > 0) {
+      rewardLines.push(`✨ EXP: ${rewardSummary.experience}`);
+    }
+    if (rewardSummary.gmoney > 0) {
+      rewardLines.push(`💵 Gmoney: ${rewardSummary.gmoney}`);
+    }
+    if (rewardSummary.items.length > 0) {
+      rewardSummary.items.forEach(item => {
+        rewardLines.push(`📦 ${item.name} x${item.quantity}`);
+      });
+    }
+
+    await createNotification(
+      player._id,
+      'quest',
+      'Hadiah Quest Diklaim',
+      `Anda telah mengklaim hadiah dari quest "${playerQuest.quest.title}".`
     );
 
-    if (questIndex === -1) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Quest tidak ditemukan atau belum selesai atau sudah diklaim' 
-      });
-    }
-
-    const quest = player.quests[questIndex];
-
-    // Berikan reward
-    player.exp += quest.rewards.exp;
-    player.gmoney += quest.rewards.gmoney;
-
-    // Tambahkan item reward jika ada
-    for (const itemReward of quest.rewards.items) {
-      const existingItem = player.inventory.find(i => i.itemId === itemReward.itemId);
-      
-      if (existingItem) {
-        existingItem.quantity += itemReward.quantity;
-      } else {
-        player.inventory.push({
-          itemId: itemReward.itemId,
-          name: itemReward.name,
-          quantity: itemReward.quantity
-        });
-      }
-    }
-
-    // Update level jika exp mencukupi
-    if (player.exp >= player.maxExp) {
-      player.level += 1;
-      player.exp -= player.maxExp;
-      player.maxExp = Math.floor(player.maxExp * 1.5); // Tingkatkan exp yang dibutuhkan
-      
-      // Tambahkan notifikasi level up
-      player.notifications.push({
-        title: 'Level Up!',
-        content: `Selamat! Kamu telah naik ke level ${player.level}`,
-        timestamp: new Date(),
-        read: false
-      });
-    }
-
-    // Tandai quest sebagai sudah diklaim
-    player.quests[questIndex].claimed = true;
-
-    await player.save();
-
-    return res.status(200).json({
-      success: true,
-      message: 'Reward quest berhasil diklaim',
-      rewards: quest.rewards
-    });
+    return {
+      status: true,
+      message: `💰 QUEST REWARD 💰\n\nQuest *${playerQuest.quest.title}* telah diklaim.\n\n${rewardLines.join('\n') || 'Tidak ada hadiah.'}`
+    };
   } catch (error) {
     logger.error(`Error claiming quest reward: ${error.message}`);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Terjadi kesalahan saat mengklaim reward quest' 
-    });
+    return {
+      status: false,
+      message: 'Terjadi kesalahan saat mengklaim reward quest.'
+    };
   }
 };
 
-/**
- * Mengupdate progress quest
- * @param {String} userId - ID pengguna WhatsApp
- * @param {String} type - Tipe aktivitas
- * @param {String} target - Target aktivitas
- * @param {Number} quantity - Jumlah aktivitas
- * @returns {Promise<Boolean>} - Status berhasil/gagal
- */
 const updateQuestProgress = async (userId, type, target, quantity = 1) => {
   try {
-    // Cari pemain dalam database
     const player = await Player.findByUserId(userId);
-    
     if (!player) {
       return false;
     }
-    
-    // Update progress quest
+
     const updated = await PlayerQuest.updateQuestProgress(player._id, type, target, quantity);
-    
+
     if (updated) {
-      // Cek apakah ada quest yang selesai
       const completedQuests = await PlayerQuest.find({
         player: player._id,
         isCompleted: true,
         isRewarded: false
       }).populate('quest');
-      
-      if (completedQuests.length > 0) {
-        // Buat notifikasi untuk setiap quest yang selesai
-        for (const quest of completedQuests) {
-          createNotification(
-            player._id,
-            'quest',
-            'Quest Selesai',
-            `Quest "${quest.quest.title}" telah selesai. Klaim hadiahmu dengan !quest klaim ${quest.quest._id}`
-          );
+
+      for (const questRow of completedQuests) {
+        if (!questRow.quest) {
+          continue;
         }
+
+        await createNotification(
+          player._id,
+          'quest',
+          'Quest Selesai',
+          `Quest "${questRow.quest.title}" telah selesai. Klaim hadiahmu dengan !quest klaim ${questRow.quest._id}`
+        );
       }
     }
-    
+
     return updated;
   } catch (error) {
     logger.error(`Error updating quest progress: ${error.message}`);
@@ -243,389 +341,9 @@ const updateQuestProgress = async (userId, type, target, quantity = 1) => {
   }
 };
 
-/**
- * Helper function untuk generate quest baru untuk pemain
- * @param {Object} player - Objek pemain
- * @returns {Promise<Boolean>} - Status berhasil/gagal
- */
-const generateNewQuests = async (player) => {
-  try {
-    // Hapus quest harian lama yang belum selesai
-    await PlayerQuest.deleteMany({
-      player: player._id,
-      isCompleted: false,
-      'quest.type': 'daily'
-    });
-    
-    // Cari quest harian yang sesuai level
-    const dailyQuests = await Quest.findActiveByLevel(player.level, 'daily', 3);
-    
-    // Cari quest mingguan jika belum ada
-    const hasWeeklyQuest = await PlayerQuest.exists({
-      player: player._id,
-      'quest.type': 'weekly'
-    });
-    
-    let weeklyQuests = [];
-    if (!hasWeeklyQuest) {
-      weeklyQuests = await Quest.findActiveByLevel(player.level, 'weekly', 1);
-    }
-    
-    // Gabung semua quest
-    const allQuests = [...dailyQuests, ...weeklyQuests];
-    
-    // Buat progress quest baru untuk pemain
-    for (const quest of allQuests) {
-      // Cek apakah quest sudah ada
-      const exists = await PlayerQuest.exists({
-        player: player._id,
-        quest: quest._id
-      });
-      
-      if (!exists) {
-        // Buat progress quest baru
-        const playerQuest = new PlayerQuest({
-          player: player._id,
-          quest: quest._id,
-          progress: []
-        });
-        
-        // Inisialisasi progress setiap requirement
-        quest.requirements.forEach((_, index) => {
-          playerQuest.progress.push({
-            requirementIndex: index,
-            current: 0,
-            completed: false
-          });
-        });
-        
-        await playerQuest.save();
-      }
-    }
-    
-    // Buat notifikasi quest baru
-    createNotification(
-      player._id,
-      'quest',
-      'Quest Baru Tersedia',
-      `${dailyQuests.length} quest harian baru telah tersedia. Gunakan !quest untuk melihat daftar quest.`
-    );
-    
-    logger.info(`Generated ${allQuests.length} new quests for player ${player.name}`);
-    
-    return true;
-  } catch (error) {
-    logger.error(`Error generating new quests: ${error.message}`);
-    return false;
-  }
-};
-
-/**
- * Mendapatkan semua quest aktif untuk pemain
- * @param {Object} req - Request object
- * @param {Object} res - Response object
- */
-const getActiveQuests = async (req, res) => {
-  try {
-    const userId = req.player.userId;
-    
-    // Validasi player
-    const player = await Player.findOne({ userId });
-    if (!player) {
-      return res.status(404).json({ success: false, message: 'Player tidak ditemukan' });
-    }
-
-    // Filter quest yang aktif (belum kadaluwarsa dan belum diklaim)
-    const now = new Date();
-    const activeQuests = player.quests.filter(quest => 
-      !quest.claimed && quest.expiry > now
-    );
-
-    return res.status(200).json({
-      success: true,
-      activeQuests
-    });
-  } catch (error) {
-    logger.error(`Error getting active quests: ${error.message}`);
-    return res.status(500).json({ success: false, message: 'Terjadi kesalahan saat mengambil quest' });
-  }
-};
-
-/**
- * Generate quest harian baru untuk pemain
- * @param {Object} req - Request object
- * @param {Object} res - Response object
- */
-const generateDailyQuests = async (req, res) => {
-  try {
-    const userId = req.player.userId;
-    
-    // Validasi player
-    const player = await Player.findOne({ userId });
-    if (!player) {
-      return res.status(404).json({ success: false, message: 'Player tidak ditemukan' });
-    }
-
-    // Cek apakah sudah pernah generate quest hari ini
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
-    // Filter quest yang dibuat hari ini
-    const todayQuests = player.quests.filter(quest => 
-      quest.questType === 'daily' && 
-      new Date(quest.expiry) > now && 
-      !quest.claimed
-    );
-
-    if (todayQuests.length > 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Kamu sudah mendapatkan quest harian untuk hari ini. Coba lagi besok!' 
-      });
-    }
-
-    // Generate quest baru
-    const newQuests = await questGenerator.generateDailyQuests(player);
-    
-    // Tambahkan quest baru ke data pemain
-    player.quests.push(...newQuests);
-    await player.save();
-
-    return res.status(200).json({
-      success: true,
-      message: 'Quest harian baru telah dibuat',
-      quests: newQuests
-    });
-  } catch (error) {
-    logger.error(`Error generating daily quests: ${error.message}`);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Terjadi kesalahan saat membuat quest harian'
-    });
-  }
-};
-
-/**
- * Menangani perintah quest dari WhatsApp
- * @param {Object} msg - Pesan WhatsApp
- * @param {String} sender - ID pengirim
- * @param {Player} player - Data pemain
- * @returns {String} Pesan balasan
- */
-const handleQuestCommand = async (msg, sender, player) => {
-  const command = msg.body.trim().toLowerCase();
-
-  // Daftar perintah quest
-  if (command === '!quest' || command === '!quests') {
-    // Tampilkan semua quest aktif
-    return await showActiveQuests(player);
-  } else if (command === '!dailyquest' || command === '!dailyquests') {
-    // Generate quest harian baru
-    return await generateNewDailyQuests(player);
-  } else if (command.startsWith('!claimquest ')) {
-    // Klaim reward quest
-    const questId = command.split(' ')[1];
-    return await claimQuest(player, questId);
-  }
-
-  return null; // Bukan perintah quest
-};
-
-/**
- * Menampilkan quest aktif pemain
- * @param {Player} player - Data pemain
- * @returns {String} Pesan balasan
- */
-const showActiveQuests = async (player) => {
-  try {
-    // Filter quest yang aktif
-    const now = new Date();
-    const activeQuests = player.quests.filter(quest => 
-      !quest.claimed && quest.expiry > now
-    );
-
-    if (activeQuests.length === 0) {
-      return '🎯 *QUEST*\n\nKamu tidak memiliki quest aktif. Gunakan perintah !dailyquest untuk mendapatkan quest baru.';
-    }
-
-    let response = '🎯 *QUEST AKTIF*\n\n';
-    
-    activeQuests.forEach((quest, index) => {
-      const progress = quest.progress >= quest.requirements.amount 
-        ? '✅ SELESAI' 
-        : `Progress: ${quest.progress}/${quest.requirements.amount}`;
-      
-      response += `*${index + 1}. ${quest.title}* (${quest.difficulty})\n`;
-      response += `${quest.description}\n`;
-      response += `${progress}\n`;
-      
-      if (quest.completed) {
-        response += '💰 Reward:\n';
-        response += `   EXP: ${quest.rewards.exp}\n`;
-        response += `   GMoney: ${quest.rewards.gmoney}\n`;
-        
-        if (quest.rewards.items.length > 0) {
-          response += '   Items:\n';
-          quest.rewards.items.forEach(item => {
-            response += `   - ${item.name} x${item.quantity}\n`;
-          });
-        }
-        
-        response += `Klaim dengan: !claimquest ${quest.id}\n`;
-      }
-      
-      response += '\n';
-    });
-
-    return response;
-  } catch (error) {
-    logger.error(`Error showing active quests: ${error.message}`);
-    return 'Terjadi kesalahan saat menampilkan quest.';
-  }
-};
-
-/**
- * Generate quest harian baru
- * @param {Player} player - Data pemain
- * @returns {String} Pesan balasan
- */
-const generateNewDailyQuests = async (player) => {
-  try {
-    // Cek apakah sudah pernah generate quest hari ini
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
-    // Filter quest yang dibuat hari ini
-    const todayQuests = player.quests.filter(quest => 
-      quest.questType === 'daily' && 
-      new Date(quest.expiry) > now && 
-      !quest.claimed
-    );
-
-    if (todayQuests.length > 0) {
-      return '🎯 *DAILY QUEST*\n\nKamu sudah mendapatkan quest harian untuk hari ini. Coba lagi besok!';
-    }
-
-    // Generate quest baru
-    const newQuests = await questGenerator.generateDailyQuests(player);
-    
-    // Tambahkan quest baru ke data pemain
-    player.quests.push(...newQuests);
-    await player.save();
-
-    let response = '🎯 *DAILY QUEST BARU*\n\nKamu mendapatkan quest harian baru:\n\n';
-    
-    newQuests.forEach((quest, index) => {
-      response += `*${index + 1}. ${quest.title}* (${quest.difficulty})\n`;
-      response += `${quest.description}\n`;
-      response += '\n';
-    });
-
-    response += '🔍 Gunakan perintah !quest untuk melihat detail lengkap quest.\n';
-    response += '⏰ Quest berlaku hingga tengah malam.';
-
-    return response;
-  } catch (error) {
-    logger.error(`Error generating daily quests: ${error.message}`);
-    return 'Terjadi kesalahan saat membuat quest harian.';
-  }
-};
-
-/**
- * Klaim reward quest
- * @param {Player} player - Data pemain
- * @param {String} questId - ID quest yang akan diklaim
- * @returns {String} Pesan balasan
- */
-const claimQuest = async (player, questId) => {
-  try {
-    if (!questId) {
-      return '❌ Mohon berikan ID quest yang akan diklaim. Contoh: !claimquest abcdef123456';
-    }
-
-    // Cari quest yang akan diklaim
-    const questIndex = player.quests.findIndex(
-      q => q.id.toString() === questId && q.completed && !q.claimed
-    );
-
-    if (questIndex === -1) {
-      return '❌ Quest tidak ditemukan atau belum selesai atau sudah diklaim.';
-    }
-
-    const quest = player.quests[questIndex];
-
-    // Berikan reward
-    player.exp += quest.rewards.exp;
-    player.gmoney += quest.rewards.gmoney;
-    let levelUp = false;
-
-    // Tambahkan item reward jika ada
-    for (const itemReward of quest.rewards.items) {
-      const existingItem = player.inventory.find(i => i.itemId === itemReward.itemId);
-      
-      if (existingItem) {
-        existingItem.quantity += itemReward.quantity;
-      } else {
-        player.inventory.push({
-          itemId: itemReward.itemId,
-          name: itemReward.name,
-          quantity: itemReward.quantity
-        });
-      }
-    }
-
-    // Update level jika exp mencukupi
-    if (player.exp >= player.maxExp) {
-      player.level += 1;
-      player.exp -= player.maxExp;
-      player.maxExp = Math.floor(player.maxExp * 1.5); // Tingkatkan exp yang dibutuhkan
-      levelUp = true;
-      
-      // Tambahkan notifikasi level up
-      player.notifications.push({
-        title: 'Level Up!',
-        content: `Selamat! Kamu telah naik ke level ${player.level}`,
-        timestamp: new Date(),
-        read: false
-      });
-    }
-
-    // Tandai quest sebagai sudah diklaim
-    player.quests[questIndex].claimed = true;
-
-    await player.save();
-
-    // Buat pesan balasan
-    let response = '💰 *QUEST REWARD*\n\n';
-    response += `Quest *${quest.title}* telah diklaim.\n\n`;
-    response += 'Kamu mendapatkan:\n';
-    response += `✨ EXP: ${quest.rewards.exp}\n`;
-    response += `💵 GMoney: ${quest.rewards.gmoney}\n`;
-    
-    if (quest.rewards.items.length > 0) {
-      response += '📦 Items:\n';
-      quest.rewards.items.forEach(item => {
-        response += `  - ${item.name} x${item.quantity}\n`;
-      });
-    }
-    
-    if (levelUp) {
-      response += `\n🎉 *LEVEL UP!* Kamu naik ke level ${player.level}!`;
-    }
-
-    return response;
-  } catch (error) {
-    logger.error(`Error claiming quest reward: ${error.message}`);
-    return 'Terjadi kesalahan saat mengklaim reward quest.';
-  }
-};
-
 module.exports = {
   viewQuests,
   claimQuestReward,
   updateQuestProgress,
-  getActiveQuests,
-  generateDailyQuests,
-  handleQuestCommand,
-  claimQuest
-}; 
+  generateNewQuests
+};

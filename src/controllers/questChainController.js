@@ -4,6 +4,18 @@ const { QuestChain, PlayerQuestChain } = require('../models/QuestChain');
 const { createNotification } = require('./notificationController');
 const logger = require('../utils/logger');
 
+const getPlayerSkillLevel = (player, skillName) => {
+  if (!player || !player.stats) {
+    return 0;
+  }
+
+  if (skillName === 'crafting') {
+    return player.stats.crafting || 0;
+  }
+
+  return player.stats.gathering?.[skillName] || 0;
+};
+
 /**
  * Mendapatkan daftar quest chain yang tersedia untuk pemain
  * @param {String} userId - ID pengguna WhatsApp
@@ -12,8 +24,7 @@ const logger = require('../utils/logger');
 const viewAvailableQuestChains = async (userId) => {
   try {
     // Cari pemain dalam database
-    const player = await Player.findByUserId(userId)
-      .populate('questChains.questChain');
+    const player = await Player.findByUserId(userId);
     
     if (!player) {
       return {
@@ -140,10 +151,23 @@ const startQuestChain = async (userId, chainId) => {
       };
     }
     
+    const completedChains = await PlayerQuestChain.find({
+      player: player._id,
+      status: 'completed'
+    }).select('questChain');
+
+    const completedQuests = await PlayerQuest.find({
+      player: player._id,
+      isCompleted: true
+    }).select('quest');
+
+    const completedChainIds = new Set(completedChains.map(row => row.questChain.toString()));
+    const completedQuestIds = new Set(completedQuests.map(row => row.quest.toString()));
+
     if (questChain.prerequisites.skills && questChain.prerequisites.skills.length > 0) {
       for (const skillReq of questChain.prerequisites.skills) {
-        const playerSkill = player.skills ? player.skills.find(s => s.name === skillReq.skill) : null;
-        if (!playerSkill || playerSkill.level < skillReq.level) {
+        const playerSkillLevel = getPlayerSkillLevel(player, skillReq.skill);
+        if (playerSkillLevel < skillReq.level) {
           return {
             status: false,
             message: `Anda membutuhkan skill ${skillReq.skill} level ${skillReq.level} untuk memulai storyline ini.`
@@ -154,10 +178,7 @@ const startQuestChain = async (userId, chainId) => {
     
     if (questChain.prerequisites.chains && questChain.prerequisites.chains.length > 0) {
       for (const prereqChain of questChain.prerequisites.chains) {
-        const completed = player.questChains.some(
-          pqc => pqc.questChain.equals(prereqChain._id) && pqc.status === 'completed'
-        );
-        if (!completed) {
+        if (!completedChainIds.has(prereqChain._id.toString())) {
           return {
             status: false,
             message: `Anda harus menyelesaikan storyline "${prereqChain.title}" terlebih dahulu.`
@@ -168,10 +189,7 @@ const startQuestChain = async (userId, chainId) => {
     
     if (questChain.prerequisites.quests && questChain.prerequisites.quests.length > 0) {
       for (const prereqQuest of questChain.prerequisites.quests) {
-        const completed = player.quests.some(
-          pq => pq.quest.equals(prereqQuest._id) && pq.isCompleted
-        );
-        if (!completed) {
+        if (!completedQuestIds.has(prereqQuest._id.toString())) {
           return {
             status: false,
             message: `Anda harus menyelesaikan quest "${prereqQuest.title}" terlebih dahulu.`
