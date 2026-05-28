@@ -3,6 +3,7 @@ const { Dungeon, DungeonInstance, PlayerDungeon } = require('../models/Dungeon')
 const { generateRandomItem } = require('../utils/itemGenerator');
 const { createNotification } = require('./notificationController');
 const logger = require('../utils/logger');
+const { saveWithOptionalSession } = require('../utils/transactionHelper');
 
 /**
  * Melihat daftar dungeon yang tersedia
@@ -325,9 +326,8 @@ const continueDungeon = async (userId) => {
       dungeonInstance.currentRoom += 1;
       dungeonInstance.monstersDefeated += 1;
       
-      // Simpan perubahan
-      await player.save();
-      await dungeonInstance.save();
+      // Simpan perubahan (both must succeed together)
+      await Promise.all([player.save(), dungeonInstance.save()]);
       
       // Buat pesan respons
       let message = `🧩 PERTARUNGAN MENANG 🧩\n\n`;
@@ -362,9 +362,8 @@ const continueDungeon = async (userId) => {
       // Reset HP pemain menjadi 1
       player.stats.health = 1;
       
-      // Simpan perubahan
-      await player.save();
-      await dungeonInstance.save();
+      // Simpan perubahan (both must succeed together)
+      await Promise.all([player.save(), dungeonInstance.save()]);
       
       // Buat pesan respons
       let message = `🧩 PERTARUNGAN KALAH 🧩\n\n`;

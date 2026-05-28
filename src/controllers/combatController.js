@@ -1,6 +1,7 @@
 const Player = require('../models/Player');
 const Item = require('../models/Item');
 const logger = require('../utils/logger');
+const { runWithTransaction, applySession, saveWithOptionalSession } = require('../utils/transactionHelper');
 const { generateRandomItem } = require('../utils/itemGenerator');
 const { updateQuestProgress } = require('./questController');
 const monsterManager = require('../utils/monsterManager');
@@ -258,6 +259,7 @@ const attackMonster = async (player, monsterName) => {
  * @returns {Object} - Status dan pesan respons
  */
 const attackPlayer = async (attacker, targetName) => {
+  return runWithTransaction(async (session) => {
   // Cek zona
   if (attacker.currentZone === 'safe') {
     return {
@@ -349,7 +351,7 @@ const attackPlayer = async (attacker, targetName) => {
     attacker.gmoney += gmoneyStolen;
     
     // Simpan perubahan
-    await Promise.all([attacker.save(), target.save()]);
+    await Promise.all([saveWithOptionalSession(attacker, session), saveWithOptionalSession(target, session)]);
     
     logger.info(`Player ${attacker.name} defeated ${target.name} in PvP and gained ${expGained} exp and ${gmoneyStolen} Gmoney`);
     
@@ -379,7 +381,7 @@ const attackPlayer = async (attacker, targetName) => {
     attacker.stats.health = 1;
     
     // Simpan perubahan
-    await Promise.all([attacker.save(), target.save()]);
+    await Promise.all([saveWithOptionalSession(attacker, session), saveWithOptionalSession(target, session)]);
     
     logger.info(`Player ${attacker.name} was defeated by ${target.name} in PvP and lost ${gmoneyLoss} Gmoney`);
     
@@ -405,7 +407,7 @@ const attackPlayer = async (attacker, targetName) => {
     target.gmoney = Math.max(0, target.gmoney - targetGmoneyLoss);
     
     // Simpan perubahan
-    await Promise.all([attacker.save(), target.save()]);
+    await Promise.all([saveWithOptionalSession(attacker, session), saveWithOptionalSession(target, session)]);
     
     logger.info(`PvP between ${attacker.name} and ${target.name} ended in a draw`);
     
@@ -422,6 +424,7 @@ const attackPlayer = async (attacker, targetName) => {
       message
     };
   }
+  }, { label: 'pvp attackPlayer' });
 };
 
 /**

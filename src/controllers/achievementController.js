@@ -2,6 +2,7 @@ const Player = require('../models/Player');
 const { Achievement, PlayerAchievement } = require('../models/Achievement');
 const { createNotification } = require('./notificationController');
 const logger = require('../utils/logger');
+const { runWithTransaction, saveWithOptionalSession } = require('../utils/transactionHelper');
 
 /**
  * Mendapatkan daftar achievement pemain
@@ -271,9 +272,8 @@ const claimAchievementReward = async (userId, achievementId) => {
     playerAchievement.claimed = true;
     playerAchievement.claimedAt = new Date();
     
-    // Simpan perubahan
-    await playerAchievement.save();
-    await player.save();
+    // Simpan perubahan (atomic to prevent double-claim)
+    await Promise.all([playerAchievement.save(), player.save()]);
     
     return {
       status: true,

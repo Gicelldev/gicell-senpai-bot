@@ -757,59 +757,9 @@ Gunakan !admin viewreports untuk melihat semua laporan.
   }
 };
 
-// Export model untuk schema Report jika tidak ada
-const mongoose = require('mongoose');
-let Report;
+// Use the canonical Report model from models directory
+const Report = require('../models/Report');
 
-try {
-  Report = mongoose.model('Report');
-} catch (error) {
-  // Buat model Report jika belum ada
-  const ReportSchema = new mongoose.Schema({
-    reporter: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Player',
-      required: true
-    },
-    reportedPlayer: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Player',
-      required: true
-    },
-    reason: {
-      type: String,
-      required: true
-    },
-    category: {
-      type: String,
-      enum: ['spam', 'harassment', 'cheating', 'scamming', 'other'],
-      default: 'other'
-    },
-    status: {
-      type: String,
-      enum: ['pending', 'investigating', 'resolved', 'rejected'],
-      default: 'pending'
-    },
-    adminComment: {
-      type: String,
-      default: null
-    },
-    resolvedBy: {
-      type: String,
-      default: null
-    },
-    resolvedAt: {
-      type: Date,
-      default: null
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now
-    }
-  });
-  
-  Report = mongoose.model('Report', ReportSchema);
-}
 
 /**
  * Menangani semua perintah admin

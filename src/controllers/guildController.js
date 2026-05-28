@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 const Player = require('../models/Player');
 const Guild = require('../models/Guild');
 const logger = require('../utils/logger');
+const {
+  runWithTransaction,
+  applySession,
+  saveWithOptionalSession
+} = require('../utils/transactionHelper');
 
 /**
  * Menangani semua perintah terkait guild
@@ -575,73 +580,63 @@ const promoteMember = async (player, targetName, newRank) => {
  * @returns {Object} - Status dan pesan respons
  */
 const donateToGuild = async (player, type, amount) => {
-  const session = await mongoose.startSession();
-
   try {
-    let result;
-
-    await session.withTransaction(async () => {
+    return await runWithTransaction(async (session) => {
       // Validasi input
       if (!type || !['gmoney', 'wood', 'stone', 'ore', 'fiber', 'hide'].includes(type.toLowerCase())) {
-        result = {
+        return {
           status: false,
           message: 'Jenis sumbangan tidak valid. Gunakan gmoney, wood, stone, ore, fiber, atau hide.'
         };
-        return;
       }
       
       type = type.toLowerCase();
       amount = parseInt(amount);
       
       if (!amount || isNaN(amount) || amount <= 0) {
-        result = {
+        return {
           status: false,
           message: 'Jumlah sumbangan harus berupa angka positif.'
         };
-        return;
       }
       
-      const freshPlayer = await Player.findById(player._id).session(session);
+      const freshPlayer = await applySession(Player.findById(player._id), session);
       if (!freshPlayer) {
-        result = {
+        return {
           status: false,
           message: 'Data pemain tidak ditemukan.'
         };
-        return;
       }
 
       // Periksa apakah pemain memiliki guild
       if (!freshPlayer.guild) {
-        result = {
+        return {
           status: false,
           message: 'Anda belum bergabung dengan guild manapun.'
         };
-        return;
       }
       
       // Dapatkan data guild
-      const guild = await Guild.findById(freshPlayer.guild).session(session);
+      const guild = await applySession(Guild.findById(freshPlayer.guild), session);
       
       if (!guild) {
         // Jika guild tidak ditemukan, perbaiki data pemain
         freshPlayer.guild = null;
-        await freshPlayer.save({ session });
+        await saveWithOptionalSession(freshPlayer, session);
         
-        result = {
+        return {
           status: false,
           message: 'Guild tidak ditemukan. Data Anda telah diperbaiki.'
         };
-        return;
       }
       
       // Cek apakah pemain memiliki sumber daya yang cukup
       if (type === 'gmoney') {
         if (freshPlayer.gmoney < amount) {
-          result = {
+          return {
             status: false,
             message: `Anda tidak memiliki cukup Gmoney. Saldo Anda: ${freshPlayer.gmoney}`
           };
-          return;
         }
         
         // Kurangi Gmoney pemain
@@ -653,20 +648,18 @@ const donateToGuild = async (player, type, amount) => {
         const availableResource = freshPlayer.getTotalResourceQuantity(type);
         
         if (availableResource < amount) {
-          result = {
+          return {
             status: false,
             message: `Anda tidak memiliki cukup ${type}. Jumlah yang Anda miliki: ${availableResource}`
           };
-          return;
         }
         
         const consumed = freshPlayer.consumeResource(type, amount);
         if (!consumed) {
-          result = {
+          return {
             status: false,
             message: 'Terjadi kesalahan saat mengurangi resource dari inventory Anda.'
           };
-          return;
         }
         
         // Tambahkan ke treasury guild
@@ -683,24 +676,20 @@ const donateToGuild = async (player, type, amount) => {
       }
       
       // Simpan perubahan
-      await guild.save({ session });
-      await freshPlayer.save({ session });
+      await saveWithOptionalSession(guild, session);
+      await saveWithOptionalSession(freshPlayer, session);
       
-      result = {
+      return {
         status: true,
         message: `Anda telah menyumbang ${amount} ${type} ke guild. Terima kasih atas kontribusi Anda!`
       };
-    });
-
-    return result;
+    }, { label: 'guild donateToGuild' });
   } catch (error) {
     logger.error(`Error donating to guild: ${error.message}`);
     return {
       status: false,
       message: 'Terjadi kesalahan saat menyumbang ke guild.'
     };
-  } finally {
-    await session.endSession();
   }
 };
 

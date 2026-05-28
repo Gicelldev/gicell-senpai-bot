@@ -1,7 +1,11 @@
-const mongoose = require('mongoose');
 const Player = require('../models/Player');
 const MarketListing = require('../models/MarketListing');
 const logger = require('../utils/logger');
+const {
+  runWithTransaction,
+  applySession,
+  saveWithOptionalSession
+} = require('../utils/transactionHelper');
 
 const MARKET_LISTING_FEE_RATE = 0.02;
 const MARKET_SALE_TAX_RATE = 0.05;
@@ -121,50 +125,42 @@ const viewMarket = async (userId) => {
  * @returns {Object} - Status dan pesan respons
  */
 const sellItem = async (userId, itemId, price, quantity = 1) => {
-  const session = await mongoose.startSession();
-
   try {
-    let result;
-
-    await session.withTransaction(async () => {
+    return await runWithTransaction(async (session) => {
       // Validasi input
       if (!itemId || !price) {
-        result = {
+        return {
           status: false,
           message: 'Format perintah tidak valid. Contoh: !jual rough_logs 100 5'
         };
-        return;
       }
       
       // Validasi harga
       const priceNum = parseInt(price);
       if (isNaN(priceNum) || priceNum <= 0) {
-        result = {
+        return {
           status: false,
           message: 'Harga harus berupa angka positif.'
         };
-        return;
       }
       
       // Validasi jumlah
       const quantityNum = parseInt(quantity);
       if (isNaN(quantityNum) || quantityNum <= 0) {
-        result = {
+        return {
           status: false,
           message: 'Jumlah harus berupa angka positif.'
         };
-        return;
       }
       
       // Cari pemain dalam database
-      const player = await Player.findOne({ userId }).session(session);
+      const player = await applySession(Player.findOne({ userId }), session);
       
       if (!player) {
-        result = {
+        return {
           status: false,
           message: 'Anda belum terdaftar sebagai pemain. Gunakan !daftar [nama] untuk mendaftar.'
         };
-        return;
       }
       
       // Update lastActivity
@@ -177,39 +173,35 @@ const sellItem = async (userId, itemId, price, quantity = 1) => {
       );
       
       if (!inventoryItem) {
-        result = {
+        return {
           status: false,
           message: `Item "${itemId}" tidak ditemukan dalam inventory Anda.`
         };
-        return;
       }
       
       // Validasi jumlah
       if (inventoryItem.quantity < quantityNum) {
-        result = {
+        return {
           status: false,
           message: `Anda hanya memiliki ${inventoryItem.quantity} ${inventoryItem.name}, tidak cukup untuk menjual ${quantityNum} unit.`
         };
-        return;
       }
       
       const totalUnits = quantityNum;
       const minimumAllowedPrice = Math.max(MINIMUM_PRICE_PER_UNIT * totalUnits, Math.ceil((inventoryItem.tier || 1) * totalUnits));
       if (priceNum < minimumAllowedPrice) {
-        result = {
+        return {
           status: false,
           message: `Harga terlalu rendah. Minimum harga untuk ${inventoryItem.name} x${quantityNum} adalah ${minimumAllowedPrice} Gmoney.`
         };
-        return;
       }
 
       const listingFee = Math.max(1, Math.ceil(priceNum * MARKET_LISTING_FEE_RATE));
       if (player.gmoney < listingFee) {
-        result = {
+        return {
           status: false,
           message: `Anda membutuhkan ${listingFee} Gmoney untuk biaya listing item ini.`
         };
-        return;
       }
 
       // Buat listing baru
@@ -225,30 +217,26 @@ const sellItem = async (userId, itemId, price, quantity = 1) => {
       });
 
       // Simpan listing
-      await newListing.save({ session });
+      await saveWithOptionalSession(newListing, session);
       
       // Kurangi item dari inventory pemain
       player.removeItem(inventoryItem.itemId, quantityNum);
       player.gmoney -= listingFee;
-      await player.save({ session });
+      await saveWithOptionalSession(player, session);
       
       logger.info(`Player ${player.name} listed ${quantityNum} ${inventoryItem.name} for ${priceNum} Gmoney with fee ${listingFee}`);
       
-      result = {
+      return {
         status: true,
         message: `✅ Berhasil mendaftarkan ${inventoryItem.name} x${quantityNum} ke marketplace dengan harga ${priceNum} Gmoney. Biaya listing: ${listingFee} Gmoney.`
       };
-    });
-
-    return result;
+    }, { label: 'market sellItem' });
   } catch (error) {
     logger.error(`Error selling item: ${error.message}`);
     return {
       status: false,
       message: `Terjadi kesalahan saat menjual item: ${error.message}`
     };
-  } finally {
-    await session.endSession();
   }
 };
 
@@ -261,73 +249,63 @@ const sellItem = async (userId, itemId, price, quantity = 1) => {
  * @returns {Object} - Status dan pesan respons
  */
 const buyItem = async (userId, listingId, quantity = null) => {
-  const session = await mongoose.startSession();
-
   try {
-    let result;
-
-    await session.withTransaction(async () => {
+    return await runWithTransaction(async (session) => {
       // Validasi input
       if (!listingId) {
-        result = {
+        return {
           status: false,
           message: 'Silakan tentukan ID listing yang ingin dibeli. Contoh: !beli 5f7b1c3d4e2a1b0e8f9d0c2a'
         };
-        return;
       }
       
       // Cari pemain dalam database
-      const player = await Player.findOne({ userId }).session(session);
+      const player = await applySession(Player.findOne({ userId }), session);
       
       if (!player) {
-        result = {
+        return {
           status: false,
           message: 'Anda belum terdaftar sebagai pemain. Gunakan !daftar [nama] untuk mendaftar.'
         };
-        return;
       }
       
       // Update lastActivity
       player.lastActivity = Date.now();
       
       // Cari listing berdasarkan ID
-      const listing = await MarketListing.findById(listingId).session(session);
+      const listing = await applySession(MarketListing.findById(listingId), session);
       
       if (!listing) {
-        result = {
+        return {
           status: false,
           message: 'Listing tidak ditemukan. Mungkin sudah terjual atau dihapus.'
         };
-        return;
       }
 
-      const seller = await Player.findById(listing.seller).session(session);
+      const seller = await applySession(Player.findById(listing.seller), session);
       if (!seller) {
-        result = {
+        return {
           status: false,
           message: 'Penjual listing tidak ditemukan. Listing ini tidak dapat diproses.'
         };
-        return;
       }
       
       // Cek apakah pemain membeli listing miliknya sendiri
       if (seller._id.toString() === player._id.toString()) {
-        result = {
+        return {
           status: false,
           message: 'Anda tidak bisa membeli listing yang Anda buat sendiri.'
         };
-        return;
       }
       
       // Tentukan jumlah yang dibeli
       const quantityToBuy = quantity ? parseInt(quantity) : listing.quantity;
       
       if (isNaN(quantityToBuy) || quantityToBuy <= 0 || quantityToBuy > listing.quantity) {
-        result = {
+        return {
           status: false,
           message: `Jumlah tidak valid. Harus antara 1 dan ${listing.quantity}.`
         };
-        return;
       }
       
       // Hitung total harga
@@ -335,11 +313,10 @@ const buyItem = async (userId, listingId, quantity = null) => {
       
       // Cek apakah pemain memiliki cukup Gmoney
       if (player.gmoney < totalPrice) {
-        result = {
+        return {
           status: false,
           message: `Gmoney Anda (${player.gmoney}) tidak cukup untuk membeli item ini (${totalPrice}).`
         };
-        return;
       }
       
       // Proses pembelian
@@ -355,39 +332,35 @@ const buyItem = async (userId, listingId, quantity = null) => {
       };
       
       player.addItem(boughtItem);
-      await player.save({ session });
+      await saveWithOptionalSession(player, session);
       
       const saleTax = Math.max(1, Math.floor(totalPrice * MARKET_SALE_TAX_RATE));
       const sellerReceives = Math.max(0, totalPrice - saleTax);
 
       if (quantityToBuy === listing.quantity) {
-        await MarketListing.findByIdAndDelete(listingId).session(session);
+        await applySession(MarketListing.findByIdAndDelete(listingId), session);
       } else {
         listing.quantity -= quantityToBuy;
         listing.price -= totalPrice;
-        await listing.save({ session });
+        await saveWithOptionalSession(listing, session);
       }
 
       seller.gmoney += sellerReceives;
-      await seller.save({ session });
+      await saveWithOptionalSession(seller, session);
       
       logger.info(`Player ${player.name} bought ${quantityToBuy} ${listing.name} for ${totalPrice} Gmoney from ${seller.name}; seller received ${sellerReceives}, tax ${saleTax}`);
       
-      result = {
+      return {
         status: true,
         message: `✅ Berhasil membeli ${listing.name} x${quantityToBuy} seharga ${totalPrice} Gmoney dari ${seller.name}. Pajak pasar: ${saleTax} Gmoney.`
       };
-    });
-
-    return result;
+    }, { label: 'market buyItem' });
   } catch (error) {
     logger.error(`Error buying item: ${error.message}`);
     return {
       status: false,
       message: `Terjadi kesalahan saat membeli item: ${error.message}`
     };
-  } finally {
-    await session.endSession();
   }
 };
 
@@ -399,48 +372,40 @@ const buyItem = async (userId, listingId, quantity = null) => {
  * @returns {Object} - Status dan pesan respons
  */
 const cancelListing = async (userId, listingId) => {
-  const session = await mongoose.startSession();
-
   try {
-    let result;
-
-    await session.withTransaction(async () => {
+    return await runWithTransaction(async (session) => {
       if (!listingId) {
-        result = {
+        return {
           status: false,
           message: 'Silakan tentukan ID listing yang ingin dibatalkan. Contoh: !pasar batal 5f7b1c3d4e2a1b0e8f9d0c2a'
         };
-        return;
       }
       
-      const player = await Player.findOne({ userId }).session(session);
+      const player = await applySession(Player.findOne({ userId }), session);
       
       if (!player) {
-        result = {
+        return {
           status: false,
           message: 'Anda belum terdaftar sebagai pemain. Gunakan !daftar [nama] untuk mendaftar.'
         };
-        return;
       }
       
       player.lastActivity = Date.now();
       
-      const listing = await MarketListing.findById(listingId).session(session);
+      const listing = await applySession(MarketListing.findById(listingId), session);
       
       if (!listing) {
-        result = {
+        return {
           status: false,
           message: 'Listing tidak ditemukan. Mungkin sudah terjual atau dihapus.'
         };
-        return;
       }
       
       if (listing.seller.toString() !== player._id.toString()) {
-        result = {
+        return {
           status: false,
           message: 'Anda tidak bisa membatalkan listing yang bukan milik Anda.'
         };
-        return;
       }
       
       const returnedItem = {
@@ -453,26 +418,22 @@ const cancelListing = async (userId, listingId) => {
       };
       
       player.addItem(returnedItem);
-      await MarketListing.findByIdAndDelete(listingId).session(session);
-      await player.save({ session });
+      await applySession(MarketListing.findByIdAndDelete(listingId), session);
+      await saveWithOptionalSession(player, session);
       
       logger.info(`Player ${player.name} canceled listing for ${listing.quantity} ${listing.name}`);
       
-      result = {
+      return {
         status: true,
         message: `✅ Berhasil membatalkan listing ${listing.name} x${listing.quantity}. Item telah dikembalikan ke inventory Anda.`
       };
-    });
-
-    return result;
+    }, { label: 'market cancelListing' });
   } catch (error) {
     logger.error(`Error canceling listing: ${error.message}`);
     return {
       status: false,
       message: `Terjadi kesalahan saat membatalkan listing: ${error.message}`
     };
-  } finally {
-    await session.endSession();
   }
 };
 
